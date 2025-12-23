@@ -82,8 +82,8 @@ async function createSession(id) {
         const sock = makeWASocket({
             version,
             logger: pino({ level: 'silent' }),
-            printQRInTerminal: true, // Useful for logs
-            browser: Browsers.macOS("Chrome"),
+            printQRInTerminal: false, // Useful for logs
+            browser: Browsers.ubuntu("Chrome"),
             auth: {
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" })),
