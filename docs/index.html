@@ -63,6 +63,16 @@
                 <button onclick="Router.go('settings')" id="nav-settings" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="settings" class="w-4 h-4"></i> Config</button>
             </nav>
         </div>
+        
+        <div class="p-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
+            <div class="flex justify-between items-center mb-2">
+                <span class="text-[10px] font-bold text-slate-500 uppercase">Engine Status</span>
+                <span id="queue-mini" class="text-[10px] font-bold text-brand-600">IDLE</span>
+            </div>
+            <div class="w-full bg-slate-200 h-1 rounded-full overflow-hidden">
+                <div id="global-progress" class="h-full bg-brand-600 w-0 transition-all duration-300"></div>
+            </div>
+        </div>
     </aside>
 
     <main class="flex-1 relative flex flex-col h-full overflow-hidden w-full bg-white md:bg-slate-50/30">
@@ -95,7 +105,7 @@
                     </div>
                     <input type="hidden" id="edit-key-hidden">
                     <div class="bg-brand-50 p-3 rounded-lg border border-brand-100 mb-3">
-                        <p class="text-[10px] font-bold text-brand-700 uppercase mb-1">Format</p>
+                        <p class="text-[10px] font-bold text-brand-700 uppercase mb-1">Format Guide</p>
                         <p class="text-[10px] text-brand-600 font-mono">1234567890 | John Doe</p>
                     </div>
                     <textarea id="edit-area" class="flex-1 w-full bg-slate-50 border border-slate-200 rounded-lg p-4 text-xs font-mono outline-none focus:border-brand-500 resize-none mb-4" placeholder="Enter contacts here..."></textarea>
@@ -110,11 +120,11 @@
                         <p id="stat-contacts" class="text-3xl font-bold text-slate-800 tracking-tight">0</p>
                     </div>
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                        <div class="flex items-center gap-3 mb-2"><i data-lucide="send" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Total Sent</span></div>
+                        <div class="flex items-center gap-3 mb-2"><i data-lucide="send" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Sent</span></div>
                         <p id="stat-sent" class="text-3xl font-bold text-slate-800 tracking-tight">0</p>
                     </div>
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                        <div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Protection</span></div>
+                        <div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Safety Protocol</span></div>
                         <p class="text-3xl font-bold text-slate-800 tracking-tight">Active</p>
                     </div>
                 </div>
@@ -126,7 +136,7 @@
                         <div class="flex justify-between items-center mb-4">
                             <h3 class="font-bold text-slate-700 text-sm">Target Audience</h3>
                             <select id="camp-list-selector" onchange="Database.loadListToCamp(this.value)" class="text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1.5 outline-none font-medium text-slate-600 focus:border-brand-500">
-                                <option value="">Load List (Extracts #)</option>
+                                <option value="">Load List</option>
                             </select>
                         </div>
                         <textarea id="camp-input" class="flex-1 w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-mono outline-none focus:border-brand-500 focus:bg-white resize-none mb-4 transition-all" placeholder="Numbers will appear here..."></textarea>
@@ -152,20 +162,17 @@
                         </div>
                     </div>
                     <div id="console-logs" class="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs bg-slate-50">
-                        <div class="text-center text-slate-400 mt-20 italic">System Ready.</div>
+                        <div class="text-center text-slate-400 mt-20 italic">System Ready. Config loaded.</div>
                     </div>
                 </div>
             </div>
 
             <div id="view-contacts" class="hidden h-full flex flex-col fade-in">
-                
                 <div class="flex md:hidden bg-slate-100 p-1 rounded-lg mb-4 shrink-0">
                     <button onclick="UI.setContactTab('list')" id="tab-list" class="flex-1 py-1.5 text-xs font-bold rounded-md bg-white shadow-sm text-slate-800">Search</button>
                     <button onclick="UI.setContactTab('tools')" id="tab-tools" class="flex-1 py-1.5 text-xs font-bold rounded-md text-slate-500">Lists & Tools</button>
                 </div>
-
                 <div class="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
-                    
                     <div id="cont-panel-list" class="flex-1 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col overflow-hidden h-full">
                         <div class="p-3 border-b border-slate-100 flex gap-2 shrink-0">
                             <div class="relative flex-1">
@@ -182,9 +189,7 @@
                             <div class="text-center mt-20 text-slate-400 text-xs">Sync contacts to build Global Memory.</div>
                         </div>
                     </div>
-
                     <div id="cont-panel-tools" class="hidden md:flex flex-col gap-4 w-full md:w-[320px] shrink-0 h-full overflow-y-auto">
-                        
                         <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm shrink-0">
                             <h3 class="font-bold text-slate-700 text-sm mb-3">List Manager</h3>
                             <input type="text" id="new-list-name" placeholder="List Name..." class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500 mb-2">
@@ -193,7 +198,6 @@
                                 <button onclick="ContactManager.clearSelection()" class="py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50">Clear Selection</button>
                             </div>
                         </div>
-
                         <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[200px]">
                             <div class="flex justify-between items-center mb-3">
                                 <h3 class="font-bold text-slate-700 text-sm">Saved Lists</h3>
@@ -201,7 +205,6 @@
                             </div>
                             <div id="contact-grid" class="flex-1 overflow-y-auto space-y-2 pr-1"></div>
                         </div>
-
                         <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm shrink-0">
                             <div class="flex justify-between items-center mb-2">
                                 <h3 class="font-bold text-slate-700 text-sm">Import Group</h3>
@@ -220,11 +223,13 @@
                     <div class="space-y-6">
                         <div>
                             <div class="flex justify-between mb-2"><label class="text-xs font-bold text-slate-600">Batch Size</label><span id="val-batch" class="text-xs font-bold text-brand-600">20</span></div>
-                            <input type="range" min="1" max="50" value="20" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" oninput="Settings.save('batch', this.value)">
+                            <input type="range" min="5" max="50" value="20" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" oninput="Settings.save('batch', this.value)">
+                            <p class="text-[10px] text-slate-400 mt-1">Messages to send before triggering cool-down.</p>
                         </div>
                         <div>
-                            <div class="flex justify-between mb-2"><label class="text-xs font-bold text-slate-600">Delay (Seconds)</label><span id="val-cool" class="text-xs font-bold text-brand-600">60</span></div>
+                            <div class="flex justify-between mb-2"><label class="text-xs font-bold text-slate-600">Cool-down (Seconds)</label><span id="val-cool" class="text-xs font-bold text-brand-600">60</span></div>
                             <input type="range" min="10" max="300" value="60" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" oninput="Settings.save('cool', this.value)">
+                            <p class="text-[10px] text-slate-400 mt-1">Pause duration after every batch.</p>
                         </div>
                     </div>
                 </div>
@@ -260,7 +265,7 @@
         };
 
         const API_BASE = "https://mkwhatsapp.onrender.com";
-        const State = { user: 'client-1', status: 'OFFLINE', qr: null, queue: [], activeFile: null, isRunning: false, processedCount: 0, settings: { batch: 20, cool: 60 }, allContacts: [], selection: new Set() };
+        const State = { user: 'client-1', status: 'OFFLINE', qr: null, queue: [], activeFile: null, isRunning: false, processedCount: 0, settings: { batch: 20, cool: 60 }, allContacts: [], selection: new Set(), tempMemory: new Map() };
         
         const Utils = {
             sleep: (ms) => new Promise(r => setTimeout(r, ms)),
@@ -316,7 +321,11 @@
                 const res = await Session.api(`contacts/${State.user}`);
                 if(res && res.contacts) {
                     const existing = new Set(State.allContacts.map(c => c.number));
-                    res.contacts.forEach(c => { if(!existing.has(c.number)) State.allContacts.push(c); });
+                    res.contacts.forEach(c => { 
+                        if(!existing.has(c.number)) State.allContacts.push(c); 
+                        // Update Memory Map for saving later
+                        State.tempMemory.set(c.number, c.name);
+                    });
                     State.allContacts.sort((a,b) => (a.name||'').localeCompare(b.name||''));
                     this.renderList(State.allContacts.slice(0, 100));
                     Utils.toast(`Synced! Global Memory: ${State.allContacts.length}`, "success");
@@ -362,34 +371,36 @@
                 this.renderList(res.slice(0, 100));
             },
             loadToSelect(key) {
-                // 1. Clear Selection
+                // 1. Clear current selection first
                 this.clearSelection();
-                // 2. Load List
                 try {
                     const data = JSON.parse(localStorage.getItem(key));
-                    data.forEach(i => State.selection.add(i.number));
+                    data.forEach(i => {
+                        State.selection.add(i.number);
+                        // Add to tempMemory so name is preserved even if not in sync list
+                        State.tempMemory.set(i.number, i.name);
+                    });
                     document.getElementById('sel-count').innerText = State.selection.size;
                     document.getElementById('new-list-name').value = key.replace('nexus_list_', '');
-                    Utils.toast(`Loaded ${data.length} for editing`, "success");
-                    this.filter(); // Refresh UI to show checks
+                    Utils.toast(`Loaded ${data.length} for Editing`, "success");
+                    this.filter(); 
                 } catch(e) { Utils.toast("Error loading list", "error"); }
             },
             saveSelection() {
                 const name = document.getElementById('new-list-name').value;
                 if(!name || !State.selection.size) return Utils.toast("Invalid input", "error");
                 
-                // Construct the List Object (Name + Number)
+                // MERGE: Uses tempMemory (Loaded Lists) + Global Contacts (Sync)
                 const listData = [];
-                // First, try to find names from Global Memory
-                const memoryMap = new Map(State.allContacts.map(c => [c.number, c.name]));
-                
                 State.selection.forEach(num => {
-                    const name = memoryMap.get(num) || "Manual Entry";
-                    listData.push({name: name, number: num});
+                    // Search in Sync list first, then Memory Map
+                    let contact = State.allContacts.find(c => c.number === num);
+                    let cName = contact ? contact.name : (State.tempMemory.get(num) || "Manual");
+                    listData.push({name: cName, number: num});
                 });
                 
                 localStorage.setItem(`nexus_list_${name}`, JSON.stringify(listData));
-                Utils.toast("Saved & Updated", "success"); 
+                Utils.toast(`Saved ${listData.length} Contacts`, "success"); 
                 this.clearSelection(); 
                 Database.render();
             },
@@ -454,8 +465,24 @@
             queue() {
                 const raw = document.getElementById('camp-input').value; const msg = document.getElementById('camp-msg').value;
                 if(!raw) return Utils.toast("No numbers", "error");
+                
+                // Lookup names for Dispatcher Display
                 const nums = raw.match(/\d{10,}/g) || [];
-                nums.forEach(n => State.queue.push({ number: n, msgs: [{msg: msg, file: State.activeFile}] }));
+                const memoryMap = new Map();
+                // Merge all known contacts into a lookup map
+                State.allContacts.forEach(c => memoryMap.set(c.number, c.name));
+                // Also check stored lists for names
+                Object.keys(localStorage).forEach(k => {
+                    if(k.startsWith('nexus_list_')) {
+                        try { JSON.parse(localStorage.getItem(k)).forEach(i => memoryMap.set(i.number, i.name)); } catch(e){}
+                    }
+                });
+
+                nums.forEach(n => {
+                    const name = memoryMap.get(n) || "Unknown";
+                    State.queue.push({ name: name, number: n, msgs: [{msg: msg, file: State.activeFile}] });
+                });
+
                 document.getElementById('queue-count').innerText = State.queue.length; document.getElementById('queue-mini').innerText = `Q: ${State.queue.length}`; Utils.toast(`${nums.length} Added`, "success");
             },
             toggle() {
@@ -467,18 +494,33 @@
             async loop() {
                 if(!State.isRunning || !State.queue.length) { this.toggle(); return; }
                 const item = State.queue.shift(); document.getElementById('queue-count').innerText = State.queue.length;
-                const log = document.getElementById('console-logs'); log.innerHTML = `<div class="text-slate-500">> Sending to ${item.number}...</div>` + log.innerHTML;
-                await Session.api('send', { id: State.user, number: item.number, message: item.msgs[0].msg, file: item.msgs[0].file });
-                log.innerHTML = `<div class="text-emerald-600 font-bold">> Sent to ${item.number}</div>` + log.innerHTML;
-                document.getElementById('stat-sent').innerText = ++State.processedCount;
-                setTimeout(() => this.loop(), Math.random() * 2000 + 1000);
+                
+                const log = document.getElementById('console-logs'); 
+                log.innerHTML = `<div class="text-slate-500 border-l-2 border-slate-200 pl-2 text-[10px]">> ${item.name} (${item.number})</div>` + log.innerHTML;
+                
+                try {
+                    await Session.api('send', { id: State.user, number: item.number, message: item.msgs[0].msg, file: item.msgs[0].file });
+                    log.innerHTML = `<div class="text-emerald-600 font-bold border-l-2 border-emerald-500 pl-2 text-[10px]">> SENT: ${item.name}</div>` + log.innerHTML;
+                    document.getElementById('stat-sent').innerText = ++State.processedCount;
+                } catch(e) {
+                     log.innerHTML = `<div class="text-red-500 font-bold border-l-2 border-red-500 pl-2 text-[10px]">> FAIL: ${item.name}</div>` + log.innerHTML;
+                }
+
+                // CONFIGURABLE DELAY LOGIC (Batching)
+                let delay = Math.random() * 2000 + 2000; // Default 2-4s
+                if (State.processedCount % parseInt(State.settings.batch) === 0) {
+                    delay = parseInt(State.settings.cool) * 1000;
+                    log.innerHTML = `<div class="text-amber-500 font-bold text-center text-[10px] my-2">-- COOLING DOWN (${State.settings.cool}s) --</div>` + log.innerHTML;
+                }
+
+                setTimeout(() => this.loop(), delay);
             }
         };
 
         const Router = { go(p) { document.querySelectorAll('[id^="view-"]').forEach(v => v.classList.add('hidden')); document.getElementById(`view-${p}`).classList.remove('hidden'); document.querySelectorAll('.nav-item').forEach(n => { n.classList.remove('bg-brand-50','text-brand-600'); n.classList.add('text-slate-500'); }); document.getElementById(`nav-${p}`).classList.add('bg-brand-50','text-brand-600'); document.getElementById('page-title').innerText = p.charAt(0).toUpperCase() + p.slice(1); document.getElementById('sidebar').classList.add('-translate-x-full'); document.getElementById('mobile-overlay').classList.add('hidden'); } };
         const Settings = { save(k,v) { State.settings[k]=v; document.getElementById(`val-${k}`).innerText = v; } };
 
-        Session.renderBtn(); Database.render(); Session.check();
+        Session.renderBtn(); Database.render(); Session.check(); Settings.save('batch', 20); Settings.save('cool', 60);
     </script>
 </body>
 </html>
