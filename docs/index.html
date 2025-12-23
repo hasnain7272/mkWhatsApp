@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Nexus OS | Enterprise SaaS</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
@@ -13,16 +13,25 @@
         tailwind.config = {
             theme: {
                 fontFamily: { sans: ['Inter', 'sans-serif'] },
-                extend: { colors: { brand: { 500: '#3b82f6', 600: '#2563eb' } } }
+                extend: { 
+                    colors: { brand: { 50: '#eff6ff', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' } },
+                    animation: { 'pulse-fast': 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite' }
+                }
             }
         }
     </script>
+    <style>
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        /* Hide scrollbar for IE, Edge and Firefox */
+        .no-scrollbar { -ms-overflow-style: none;  scrollbar-width: none; }
+    </style>
 </head>
 <body class="bg-slate-50 text-slate-800 h-screen w-full flex overflow-hidden selection:bg-brand-500 selection:text-white">
 
-    <div id="mobile-overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-20 hidden md:hidden transition-opacity"></div>
+    <div id="mobile-overlay" onclick="UI.toggleSidebar()" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-20 hidden md:hidden transition-opacity"></div>
 
-    <aside id="sidebar" class="fixed inset-y-0 left-0 z-30 w-72 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 -translate-x-full md:translate-x-0 md:relative shadow-2xl md:shadow-none">
+    <aside id="sidebar" class="fixed inset-y-0 left-0 z-30 w-72 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 -translate-x-full md:translate-x-0 shadow-2xl md:shadow-none">
         <div class="h-16 flex items-center px-6 border-b border-slate-100 shrink-0">
             <div class="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-brand-500/30">
                 <i data-lucide="layers" class="w-5 h-5"></i>
@@ -31,13 +40,13 @@
                 <h1 class="font-bold text-lg tracking-tight leading-none">Nexus OS</h1>
                 <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Enterprise</span>
             </div>
-            <button onclick="toggleSidebar()" class="ml-auto md:hidden text-slate-400"><i data-lucide="x" class="w-5 h-5"></i></button>
+            <button onclick="UI.toggleSidebar()" class="ml-auto md:hidden text-slate-400"><i data-lucide="x" class="w-5 h-5"></i></button>
         </div>
 
-        <div class="flex-1 p-4 overflow-y-auto space-y-6 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full">
+        <div class="flex-1 p-4 overflow-y-auto space-y-6">
             <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
                 <div class="flex items-center justify-between mb-3">
-                    <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Active Node</span>
+                    <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Active Session</span>
                     <span id="conn-dot" class="w-2 h-2 rounded-full bg-slate-300 transition-colors duration-300"></span>
                 </div>
                 <div class="flex bg-white rounded-lg p-1 border border-slate-200 shadow-sm mb-4">
@@ -55,7 +64,7 @@
                 <button onclick="Router.go('settings')" id="nav-settings" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-all"><i data-lucide="settings" class="w-4 h-4"></i> Config</button>
             </nav>
         </div>
-
+        
         <div class="p-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
             <div class="flex justify-between items-center mb-2">
                 <span class="text-[10px] font-bold text-slate-500 uppercase">Engine Status</span>
@@ -67,21 +76,21 @@
         </div>
     </aside>
 
-    <main class="flex-1 relative flex flex-col h-full overflow-hidden w-full">
+    <main class="flex-1 relative flex flex-col h-full overflow-hidden w-full bg-white md:bg-slate-50/30">
         <header class="h-16 px-4 md:px-8 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-10">
             <div class="flex items-center gap-3">
-                <button onclick="toggleSidebar()" class="md:hidden p-2 -ml-2 text-slate-500"><i data-lucide="menu" class="w-5 h-5"></i></button>
+                <button onclick="UI.toggleSidebar()" class="md:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-50 rounded-lg"><i data-lucide="menu" class="w-5 h-5"></i></button>
                 <h2 id="page-title" class="text-lg md:text-xl font-bold text-slate-800">Dashboard</h2>
             </div>
             <div class="px-3 py-1 bg-white border border-slate-200 rounded-full text-xs font-medium text-slate-600 shadow-sm flex items-center gap-2">
-                <span class="w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse"></span> Queue: <span id="queue-count" class="font-bold text-brand-600">0</span>
+                <span id="status-light" class="w-2 h-2 rounded-full bg-slate-300"></span> Queue: <span id="queue-count" class="font-bold text-slate-800">0</span>
             </div>
         </header>
 
-        <div class="flex-1 overflow-y-auto p-4 md:p-8 relative [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-thumb]:rounded-full">
+        <div class="flex-1 overflow-y-auto p-4 md:p-8 relative">
             
-            <div id="modal-qr" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4">
-                <div class="bg-white p-6 md:p-8 rounded-2xl shadow-2xl w-full max-w-sm text-center border border-slate-100 animate-[fadeIn_0.2s_ease-out]">
+            <div id="modal-qr" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
+                <div class="bg-white p-6 md:p-8 rounded-2xl shadow-2xl w-full max-w-sm text-center border border-slate-100">
                     <div class="bg-white p-2 border border-slate-100 rounded-xl inline-block mb-4 shadow-sm"><canvas id="qr-canvas"></canvas></div>
                     <h3 class="font-bold text-lg text-slate-800">Link Device</h3>
                     <p class="text-xs text-slate-500 mb-6">WhatsApp > Linked Devices > Link</p>
@@ -89,13 +98,14 @@
                 </div>
             </div>
 
-            <div id="modal-edit" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4">
+            <div id="modal-edit" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
                 <div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-100 flex flex-col h-[500px]">
                     <div class="flex justify-between items-center mb-4">
-                        <h3 class="font-bold text-lg text-slate-800">Edit List</h3>
+                        <h3 class="font-bold text-lg text-slate-800">Edit List Source</h3>
                         <button onclick="Database.closeEdit()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
                     </div>
                     <input type="hidden" id="edit-key-hidden">
+                    <p class="text-xs text-slate-500 mb-2">Manual editing. To add contacts visually, use "Load to Selection" in Contacts tab.</p>
                     <textarea id="edit-area" class="flex-1 w-full bg-slate-50 border border-slate-200 rounded-lg p-4 text-xs font-mono outline-none focus:border-brand-500 resize-none mb-4"></textarea>
                     <button onclick="Database.saveEdit()" class="w-full py-2.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 transition-colors">Save Changes</button>
                 </div>
@@ -104,103 +114,118 @@
             <div id="view-dashboard" class="max-w-5xl mx-auto space-y-6">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-                        <div class="flex items-center gap-3 mb-2"><i data-lucide="users" class="w-4 h-4 text-brand-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Total Contacts</span></div>
+                        <div class="flex items-center gap-3 mb-2"><i data-lucide="users" class="w-4 h-4 text-brand-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Synced Contacts</span></div>
                         <p id="stat-contacts" class="text-3xl font-bold text-slate-800 tracking-tight">0</p>
                     </div>
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-                        <div class="flex items-center gap-3 mb-2"><i data-lucide="check-circle" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Total Sent</span></div>
+                        <div class="flex items-center gap-3 mb-2"><i data-lucide="send" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Messages Sent</span></div>
                         <p id="stat-sent" class="text-3xl font-bold text-slate-800 tracking-tight">0</p>
                     </div>
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-                        <div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Safe Mode</span></div>
-                        <p class="text-3xl font-bold text-slate-800 tracking-tight">Active</p>
+                        <div class="flex items-center gap-3 mb-2"><i data-lucide="shield-check" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">System Status</span></div>
+                        <p class="text-3xl font-bold text-slate-800 tracking-tight">Optimal</p>
                     </div>
                 </div>
             </div>
 
             <div id="view-campaigns" class="hidden h-full flex flex-col md:flex-row gap-6">
-                <div class="w-full md:w-[380px] flex flex-col gap-4 shrink-0">
+                <div class="w-full md:w-[400px] flex flex-col gap-4 shrink-0">
                     <div class="bg-white border border-slate-200 p-5 rounded-xl shadow-sm flex-1 flex flex-col">
                         <div class="flex justify-between items-center mb-3">
-                            <h3 class="font-bold text-slate-700 text-sm">Targets</h3>
-                            <select id="list-selector" onchange="Database.loadList(this.value)" class="text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1 outline-none text-slate-600 cursor-pointer focus:border-brand-500">
-                                <option value="">Load List...</option>
+                            <h3 class="font-bold text-slate-700 text-sm">Campaign Setup</h3>
+                            <select id="list-selector" onchange="Database.loadListToCamp(this.value)" class="text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1 outline-none text-slate-600 cursor-pointer focus:border-brand-500 transition-colors">
+                                <option value="">Load Saved List...</option>
                             </select>
                         </div>
-                        <textarea id="camp-input" class="flex-1 w-full bg-white border border-slate-200 rounded-lg p-3 text-xs font-mono outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 resize-none mb-3 transition-all" placeholder="Paste numbers here (one per line)..."></textarea>
+                        <textarea id="camp-input" class="flex-1 w-full bg-white border border-slate-200 rounded-lg p-3 text-xs font-mono outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 resize-none mb-3 transition-all" placeholder="Paste numbers here (one per line)..."></textarea>
                         <div class="space-y-3">
-                            <input id="camp-msg" type="text" class="w-full bg-white border border-slate-200 rounded-lg p-3 text-xs outline-none focus:border-brand-500 transition-all" placeholder="Message content...">
+                            <input id="camp-msg" type="text" class="w-full bg-white border border-slate-200 rounded-lg p-3 text-xs outline-none focus:border-brand-500 transition-all" placeholder="Type your message...">
                             <div onclick="document.getElementById('camp-file').click()" id="file-drop" class="border border-dashed border-slate-300 rounded-lg p-3 flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 transition-colors group">
                                 <i data-lucide="paperclip" class="w-4 h-4 text-slate-400 group-hover:text-brand-500"></i>
-                                <span id="file-name" class="text-xs font-bold text-slate-500 truncate max-w-[150px]">Attach Media</span>
+                                <span id="file-name" class="text-xs font-bold text-slate-500 truncate max-w-[150px]">Attach Image/Doc</span>
                                 <input type="file" id="camp-file" class="hidden" onchange="Engine.handleFile(this)">
                             </div>
                         </div>
                     </div>
-                    <button onclick="Engine.queue()" class="w-full py-3 bg-brand-600 text-white rounded-xl font-bold shadow-lg shadow-brand-500/20 hover:bg-brand-700 transition-all flex justify-center gap-2 items-center active:scale-[0.98]"><i data-lucide="plus" class="w-4 h-4"></i> Add to Queue</button>
+                    <div class="flex gap-2">
+                        <button onclick="Engine.queue()" class="flex-1 py-3 bg-slate-800 text-white rounded-xl font-bold shadow-lg hover:bg-slate-900 transition-all flex justify-center gap-2 items-center active:scale-[0.98]"><i data-lucide="layers" class="w-4 h-4"></i> Add to Queue</button>
+                    </div>
                 </div>
+
                 <div class="flex-1 bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden shadow-sm h-[400px] md:h-auto">
-                    <div class="h-12 border-b border-slate-100 flex items-center justify-between px-5 bg-slate-50/50">
-                        <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Console</span>
+                    <div class="h-14 border-b border-slate-100 flex items-center justify-between px-5 bg-slate-50/50">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="terminal" class="w-4 h-4 text-slate-400"></i>
+                            <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Dispatcher</span>
+                        </div>
                         <div class="flex gap-2">
-                            <button onclick="Engine.toggle()" id="btn-engine-toggle" class="text-[10px] font-bold px-3 py-1 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors">START</button>
-                            <button onclick="Engine.clear()" class="text-[10px] font-bold px-3 py-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300 transition-colors">CLEAR</button>
+                            <button onclick="Engine.toggle()" id="btn-engine-toggle" class="text-[10px] font-bold px-4 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-all border border-emerald-200 shadow-sm flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> START</button>
+                            <button onclick="Engine.clear()" class="text-[10px] font-bold px-4 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all shadow-sm">CLEAR</button>
                         </div>
                     </div>
-                    <div id="console-logs" class="flex-1 overflow-y-auto p-4 space-y-1 font-mono text-xs">
-                        <div class="text-center text-slate-400 mt-20 italic">Ready for dispatch.</div>
+                    <div id="console-logs" class="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs bg-white">
+                        <div class="text-center text-slate-300 mt-20 italic">Queue is empty.</div>
                     </div>
                 </div>
             </div>
 
             <div id="view-contacts" class="hidden h-full flex flex-col md:flex-row gap-6">
-                <div class="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col overflow-hidden h-full flex-1">
-                    <div class="p-4 border-b border-slate-100 flex gap-2">
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col overflow-hidden h-[60vh] md:h-full flex-1 order-2 md:order-1">
+                    <div class="p-4 border-b border-slate-100 flex gap-2 shrink-0">
                         <div class="relative flex-1">
                             <i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-slate-400"></i>
-                            <input type="text" id="contact-search" onkeyup="ContactManager.filter()" placeholder="Search..." class="pl-9 w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500 transition-colors">
+                            <input type="text" id="contact-search" onkeyup="ContactManager.filter()" placeholder="Search names or numbers..." class="pl-9 w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500 transition-colors">
                         </div>
-                        <button onclick="ContactManager.sync()" id="btn-sync-contacts" class="px-3 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg flex items-center justify-center transition-colors"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+                        <button onclick="ContactManager.sync()" id="btn-sync-contacts" class="px-3 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg flex items-center justify-center transition-colors tooltip" title="Sync & Merge Contacts"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
                     </div>
+                    
+                    <div class="px-4 py-2 bg-slate-50 border-b border-slate-100 flex justify-between items-center shrink-0">
+                        <span class="text-[10px] uppercase font-bold text-slate-400">All Contacts (<span id="count-all">0</span>)</span>
+                        <span class="text-[10px] uppercase font-bold text-brand-600">Selected: <span id="sel-count">0</span></span>
+                    </div>
+
                     <div id="contact-list-container" class="flex-1 overflow-y-auto p-2 space-y-1">
-                        <div class="text-center mt-20 text-slate-400 text-xs">Sync to load contacts.</div>
+                        <div class="text-center mt-20 text-slate-400 text-xs">Sync to load and merge contacts from all sessions.</div>
                     </div>
                 </div>
 
-                <div class="flex flex-col gap-6 w-full md:w-[320px] shrink-0 h-fit">
+                <div class="flex flex-col gap-4 w-full md:w-[320px] shrink-0 h-fit order-1 md:order-2">
                     <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                        <div class="flex justify-between items-center mb-3">
-                            <h3 class="font-bold text-slate-700 text-sm">Create List</h3>
-                            <span id="sel-count" class="bg-brand-100 text-brand-600 text-xs font-bold px-2 py-0.5 rounded-full">0</span>
+                        <h3 class="font-bold text-slate-700 text-sm mb-3">List Management</h3>
+                        <div class="flex gap-2 mb-2">
+                             <input type="text" id="new-list-name" placeholder="New List Name..." class="flex-1 bg-white border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500">
                         </div>
-                        <input type="text" id="new-list-name" placeholder="List Name..." class="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500 mb-2">
-                        <div class="flex gap-2">
-                            <button onclick="ContactManager.saveSelection()" class="flex-1 py-2 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 transition-colors">Save</button>
-                            <button onclick="ContactManager.clearSelection()" class="px-3 py-2 bg-slate-100 text-slate-500 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors">Clear</button>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="ContactManager.saveSelection()" class="py-2 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 transition-colors shadow-sm">Save Selection</button>
+                            <button onclick="ContactManager.clearSelection()" class="py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50 transition-colors">Clear Sel.</button>
                         </div>
                     </div>
-                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                        <h3 class="font-bold text-slate-800 mb-1 text-sm">Import Groups</h3>
-                        <p class="text-[10px] text-slate-400 mb-3">Fetch WhatsApp groups/broadcasts.</p>
-                        <div class="space-y-2">
-                            <button onclick="Import.loadGroups()" id="btn-load-groups" class="w-full py-2 bg-slate-50 text-slate-600 rounded-lg text-xs font-bold border border-slate-200 hover:bg-slate-100 transition-colors">Load Lists</button>
-                            <select id="group-selector" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs outline-none" disabled><option value="">(Load First)</option></select>
-                            <button onclick="Import.fetchSelected()" id="btn-import" class="w-full py-2 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-900 transition-colors opacity-50 cursor-not-allowed" disabled>Import Selected</button>
-                        </div>
-                    </div>
-                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col max-h-[300px]">
+
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col max-h-[300px] md:max-h-[calc(100vh-340px)]">
                         <h3 class="font-bold text-slate-700 text-sm mb-3">Saved Lists</h3>
-                        <div id="contact-grid" class="flex-1 overflow-y-auto space-y-2 pr-1 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-slate-200"></div>
+                        <div id="contact-grid" class="flex-1 overflow-y-auto space-y-2 pr-1 custom-scroll">
+                            </div>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                        <div class="flex justify-between items-center mb-2">
+                            <h3 class="font-bold text-slate-800 text-sm">WA Groups</h3>
+                            <button onclick="Import.loadGroups()" id="btn-load-groups" class="text-[10px] font-bold text-brand-600 hover:text-brand-700">FETCH</button>
+                        </div>
+                        <div class="space-y-2">
+                            <select id="group-selector" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs outline-none mb-1" disabled><option value="">(Fetch First)</option></select>
+                            <button onclick="Import.fetchSelected()" id="btn-import" class="w-full py-2 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-900 transition-colors opacity-50 cursor-not-allowed" disabled>Import Members</button>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <div id="view-settings" class="hidden max-w-xl mx-auto">
                 <div class="bg-white p-8 rounded-xl border border-slate-200 shadow-sm">
-                    <h3 class="font-bold text-lg text-slate-800 mb-6">Safety Configuration</h3>
+                    <h3 class="font-bold text-lg text-slate-800 mb-6">Configuration</h3>
                     <div class="space-y-6">
-                        <div><label class="text-sm font-bold text-slate-600 block mb-2">Batch Size</label><input type="range" min="5" max="50" value="20" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" oninput="Settings.save('batch', this.value)"></div>
-                        <div><label class="text-sm font-bold text-slate-600 block mb-2">Cool-down (Sec)</label><input type="range" min="10" max="300" value="60" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" oninput="Settings.save('cool', this.value)"></div>
+                        <div><label class="text-sm font-bold text-slate-600 block mb-2">Batch Size (Messages per burst)</label><input type="range" min="1" max="100" value="20" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg cursor-pointer" oninput="Settings.save('batch', this.value); document.getElementById('lbl-batch').innerText=this.value"><span id="lbl-batch" class="text-xs font-bold text-brand-600">20</span></div>
+                        <div><label class="text-sm font-bold text-slate-600 block mb-2">Cool-down (Seconds between bursts)</label><input type="range" min="5" max="300" value="60" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg cursor-pointer" oninput="Settings.save('cool', this.value); document.getElementById('lbl-cool').innerText=this.value"><span id="lbl-cool" class="text-xs font-bold text-brand-600">60</span></div>
                     </div>
                 </div>
             </div>
@@ -210,26 +235,51 @@
 
     <script>
         lucide.createIcons();
-        function toggleSidebar() {
-            const sb = document.getElementById('sidebar');
-            const ov = document.getElementById('mobile-overlay');
-            sb.classList.toggle('-translate-x-full');
-            ov.classList.toggle('hidden');
-        }
+        const UI = {
+            toggleSidebar() {
+                const sb = document.getElementById('sidebar');
+                const ov = document.getElementById('mobile-overlay');
+                sb.classList.toggle('-translate-x-full');
+                ov.classList.toggle('hidden');
+            },
+            renderSession() {
+                document.getElementById('btn-c1').className = `flex-1 py-1.5 text-[10px] font-bold rounded uppercase transition-all ${State.user==='client-1' ? 'bg-brand-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`;
+                document.getElementById('btn-c2').className = `flex-1 py-1.5 text-[10px] font-bold rounded uppercase transition-all ${State.user==='client-2' ? 'bg-brand-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`;
+                
+                const dot = document.getElementById('conn-dot'); 
+                const area = document.getElementById('action-area');
+                
+                if (State.status === 'READY') {
+                    dot.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981]";
+                    area.innerHTML = `<button onclick="Session.stop()" class="w-full py-2 bg-red-50 border border-red-100 text-red-600 hover:bg-red-100 text-xs font-bold rounded-lg transition-colors mt-2">Disconnect Session</button>`;
+                } else if (State.status === 'QR_READY' && State.qr) {
+                    dot.className = "w-2 h-2 rounded-full bg-blue-500 animate-pulse";
+                    area.innerHTML = `<button onclick="document.getElementById('modal-qr').classList.remove('hidden')" class="w-full py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-lg transition-colors mt-2 shadow-sm">Scan QR Code</button>`;
+                    document.getElementById('modal-qr').classList.remove('hidden'); 
+                    new QRious({ element: document.getElementById('qr-canvas'), value: State.qr, size: 200 });
+                } else if (State.status === 'INIT') {
+                    dot.className = "w-2 h-2 rounded-full bg-amber-500 animate-ping";
+                    area.innerHTML = `<div class="w-full py-2 bg-slate-50 text-slate-400 text-xs font-bold rounded-lg flex justify-center gap-2 mt-2"><div class="w-3 h-3 border-2 border-slate-300 border-b-slate-600 rounded-full animate-spin"></div> Connecting...</div>`;
+                } else {
+                    dot.className = "w-2 h-2 rounded-full bg-slate-300";
+                    area.innerHTML = `<button onclick="Session.start()" class="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-2 mt-2 shadow-sm"><i data-lucide="power" class="w-3 h-3"></i> Initialize</button>`;
+                }
+                lucide.createIcons();
+            }
+        };
 
         const API_BASE = "https://mkwhatsapp.onrender.com";
-        const State = { user: 'client-1', status: 'OFFLINE', qr: null, queue: [], activeFile: null, isRunning: false, processedCount: 0, settings: { batch: 20, cool: 60 }, contacts: [], selection: new Set() };
-        
-        // Tailwind styling constants to replace CSS classes
-        const Styles = {
-            navActive: "bg-brand-50 text-brand-600 font-semibold",
-            navInactive: "text-slate-500 hover:bg-slate-100 hover:text-slate-900 font-medium",
-            nodeActive: "bg-brand-600 text-white shadow-sm",
-            nodeInactive: "text-slate-500 hover:text-slate-800",
-            contactSelected: "bg-brand-50 border-brand-500",
-            contactDefault: "hover:bg-slate-50 border-transparent",
-            checkSelected: "bg-brand-500 border-brand-500 text-white",
-            checkDefault: "border-slate-300"
+        const State = { 
+            user: 'client-1', 
+            status: 'OFFLINE', 
+            qr: null, 
+            queue: [], 
+            activeFile: null, 
+            isRunning: false, 
+            processedCount: 0, 
+            settings: { batch: 20, cool: 60 }, 
+            allContacts: [], // merged list
+            selection: new Set() 
         };
 
         const Utils = {
@@ -241,7 +291,7 @@
             },
             toast: (msg, type='info') => {
                 const c = document.getElementById('toasts'); const el = document.createElement('div');
-                el.className = `${type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-red-500' : 'bg-slate-800'} text-white px-4 py-3 rounded-lg shadow-lg text-xs font-bold animate-[slideUp_0.3s_ease-out] pointer-events-auto`;
+                el.className = `${type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-red-600' : 'bg-slate-800'} text-white px-4 py-3 rounded-lg shadow-xl text-xs font-bold animate-[slideUp_0.3s_ease-out] border border-white/10`;
                 el.innerText = msg; c.appendChild(el); setTimeout(() => el.remove(), 3000);
             }
         };
@@ -250,32 +300,69 @@
             async api(path, body) { try { const res = await fetch(`${API_BASE}/api/${path}`, body ? { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) } : {}); return res.ok ? res.json() : null; } catch { return null; } },
             switch(id) { if (State.user !== id) { State.user = id; State.status = 'OFFLINE'; State.qr = null; UI.renderSession(); this.check(); } },
             async start() { State.status = 'INIT'; UI.renderSession(); await this.api('start', { id: State.user }); setTimeout(() => this.poll(), 1000); },
-            async stop() { if(confirm("Disconnect?")) await this.api('logout', { id: State.user }); State.status='OFFLINE'; UI.renderSession(); },
+            async stop() { if(confirm("Disconnect Session?")) await this.api('logout', { id: State.user }); State.status='OFFLINE'; UI.renderSession(); },
             async check() { const data = await this.api(`status/${State.user}`); if (data) { State.status = data.status; State.qr = data.qr; UI.renderSession(); } },
-            poll() { this.check(); setInterval(() => this.check(), 2000); }
+            poll() { this.check(); setInterval(() => this.check(), 3000); }
         };
 
         const ContactManager = {
             async sync() {
                 const btn = document.getElementById('btn-sync-contacts'); const original = btn.innerHTML;
-                btn.innerHTML = `<div class="w-4 h-4 border-2 border-slate-400 border-b-transparent rounded-full animate-spin"></div>`;
+                btn.innerHTML = `<div class="w-4 h-4 border-2 border-slate-500 border-b-transparent rounded-full animate-spin"></div>`;
+                
                 const res = await Session.api(`contacts/${State.user}`);
+                
                 if (res && res.contacts) {
-                    State.contacts = res.contacts.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-                    this.renderList(State.contacts.slice(0, 100)); Utils.toast(`Loaded ${res.count} contacts`, 'success');
-                } else Utils.toast("Syncing in background...", "info");
+                    // MERGE LOGIC: Add new contacts to global list, avoiding duplicates by number
+                    const existingNumbers = new Set(State.allContacts.map(c => c.number));
+                    let added = 0;
+                    res.contacts.forEach(c => {
+                        if (!existingNumbers.has(c.number)) {
+                            State.allContacts.push({ ...c, _source: State.user }); // Tag source
+                            existingNumbers.add(c.number);
+                            added++;
+                        }
+                    });
+                    
+                    // Sort alphabetically
+                    State.allContacts.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                    
+                    this.renderList(State.allContacts.slice(0, 100)); 
+                    Utils.toast(`Merged ${added} new contacts. Total: ${State.allContacts.length}`, 'success');
+                } else {
+                    Utils.toast("Sync failed or backgrounding...", "error");
+                }
                 btn.innerHTML = original; lucide.createIcons();
             },
             renderList(list) {
                 const container = document.getElementById('contact-list-container'); container.innerHTML = '';
-                document.getElementById('stat-contacts').innerText = list.length;
+                document.getElementById('count-all').innerText = State.allContacts.length;
+                
                 const fragment = document.createDocumentFragment();
-                list.slice(0, 100).forEach(c => {
+                list.forEach(c => {
                     const isSel = State.selection.has(c.number);
                     const div = document.createElement('div');
-                    div.className = `flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors border ${isSel ? Styles.contactSelected : Styles.contactDefault}`;
+                    
+                    // Fixed Styling Logic: Explicit text colors
+                    div.className = `flex items-center justify-between p-2.5 mb-1 rounded-lg cursor-pointer transition-all border 
+                        ${isSel ? 'bg-brand-50 border-brand-500 ring-1 ring-brand-500' : 'bg-white border-transparent hover:bg-slate-50'}`;
+                    
                     div.onclick = () => this.toggle(c.number, div);
-                    div.innerHTML = `<div class="flex items-center gap-3 pointer-events-none"><div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500 shrink-0">${(c.name||'#').charAt(0).toUpperCase()}</div><div class="overflow-hidden"><h4 class="text-xs font-bold text-slate-700 truncate w-32">${c.name || "Unknown"}</h4><p class="text-[10px] text-slate-400 font-mono">${c.number}</p></div></div><div class="pointer-events-none w-4 h-4 rounded-full border flex items-center justify-center text-[10px] ${isSel ? Styles.checkSelected : Styles.checkDefault}">${isSel ? '✓' : ''}</div>`;
+                    
+                    div.innerHTML = `
+                        <div class="flex items-center gap-3 pointer-events-none">
+                            <div class="w-8 h-8 rounded-full ${isSel ? 'bg-brand-200 text-brand-700' : 'bg-slate-100 text-slate-500'} flex items-center justify-center text-xs font-bold shrink-0 transition-colors">
+                                ${(c.name||'#').charAt(0).toUpperCase()}
+                            </div>
+                            <div class="overflow-hidden">
+                                <h4 class="text-xs font-bold text-slate-700 truncate w-40">${c.name || "Unknown"}</h4>
+                                <p class="text-[10px] text-slate-500 font-mono">${c.number} <span class="text-slate-300">•</span> ${c._source || State.user}</p>
+                            </div>
+                        </div>
+                        <div class="pointer-events-none w-4 h-4 rounded-full border flex items-center justify-center text-[10px] transition-all
+                            ${isSel ? 'bg-brand-600 border-brand-600 text-white' : 'border-slate-300 bg-white'}">
+                            ${isSel ? '✓' : ''}
+                        </div>`;
                     fragment.appendChild(div);
                 });
                 container.appendChild(fragment);
@@ -283,24 +370,94 @@
             toggle(num, el) {
                 if(State.selection.has(num)) State.selection.delete(num); else State.selection.add(num);
                 const isSel = State.selection.has(num);
-                el.className = `flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors border ${isSel ? Styles.contactSelected : Styles.contactDefault}`;
-                el.querySelector('div:last-child').className = `pointer-events-none w-4 h-4 rounded-full border flex items-center justify-center text-[10px] ${isSel ? Styles.checkSelected : Styles.checkDefault}`;
-                el.querySelector('div:last-child').innerText = isSel ? '✓' : '';
+                
+                // Update Classes immediately
+                el.className = `flex items-center justify-between p-2.5 mb-1 rounded-lg cursor-pointer transition-all border 
+                        ${isSel ? 'bg-brand-50 border-brand-500 ring-1 ring-brand-500' : 'bg-white border-transparent hover:bg-slate-50'}`;
+                
+                // Update Icon styling
+                const icon = el.querySelector('div:first-child > div');
+                icon.className = `w-8 h-8 rounded-full ${isSel ? 'bg-brand-200 text-brand-700' : 'bg-slate-100 text-slate-500'} flex items-center justify-center text-xs font-bold shrink-0 transition-colors`;
+                
+                // Update Checkbox
+                const check = el.querySelector('div:last-child');
+                check.className = `pointer-events-none w-4 h-4 rounded-full border flex items-center justify-center text-[10px] transition-all ${isSel ? 'bg-brand-600 border-brand-600 text-white' : 'border-slate-300 bg-white'}`;
+                check.innerText = isSel ? '✓' : '';
+                
                 document.getElementById('sel-count').innerText = State.selection.size;
             },
             filter: Utils.debounce(() => {
                 const terms = document.getElementById('contact-search').value.toLowerCase().split(' ').filter(t=>t);
-                ContactManager.renderList(terms.length===0 ? State.contacts.slice(0, 100) : State.contacts.filter(c => terms.every(t => (c.name||"").toLowerCase().includes(t) || (c.number||"").includes(t))));
+                const filtered = terms.length===0 ? State.allContacts : State.allContacts.filter(c => terms.every(t => (c.name||"").toLowerCase().includes(t) || (c.number||"").includes(t)));
+                ContactManager.renderList(filtered.slice(0, 100));
             }, 300),
             saveSelection() {
                 const name = document.getElementById('new-list-name').value;
-                if(!name || !State.selection.size) return Utils.toast("Invalid input", "error");
+                if(!name || !State.selection.size) return Utils.toast("Enter name & select contacts", "error");
+                
+                // Check overwrite
+                if(localStorage.getItem(`nexus_list_${name}`) && !confirm("Overwrite existing list?")) return;
+
                 localStorage.setItem(`nexus_list_${name}`, Array.from(State.selection).join('\n'));
-                Utils.toast("List Saved", "success"); this.clearSelection(); Database.render();
+                Utils.toast("List Saved", "success"); 
+                this.clearSelection(); 
+                Database.render();
             },
             clearSelection() {
-                State.selection.clear(); document.getElementById('sel-count').innerText = 0; document.getElementById('new-list-name').value = '';
-                this.renderList(State.contacts.slice(0, 100));
+                State.selection.clear(); 
+                document.getElementById('sel-count').innerText = 0; 
+                document.getElementById('new-list-name').value = '';
+                // Re-render currently visible list to remove styling
+                const currentSearch = document.getElementById('contact-search').value;
+                if(currentSearch) this.filter(); else this.renderList(State.allContacts.slice(0, 100));
+            },
+            loadListToSelection(key) {
+                const content = localStorage.getItem(key);
+                if(!content) return;
+                const numbers = content.split('\n');
+                numbers.forEach(n => State.selection.add(n.trim()));
+                document.getElementById('sel-count').innerText = State.selection.size;
+                document.getElementById('new-list-name').value = key.replace('nexus_list_', '');
+                Utils.toast(`Loaded ${numbers.length} to selection. You can now add more and Save.`, "success");
+                this.renderList(State.allContacts.slice(0, 100)); // Refresh view
+            }
+        };
+
+        const Database = {
+            delete(key) { if(confirm("Delete List?")) { localStorage.removeItem(key); this.render(); } },
+            loadListToCamp(val) { if(val) { document.getElementById('camp-input').value = localStorage.getItem(val); Utils.toast("Contacts loaded into Campaign"); } },
+            openEdit(key) { document.getElementById('edit-key-hidden').value = key; document.getElementById('edit-area').value = localStorage.getItem(key); document.getElementById('modal-edit').classList.remove('hidden'); },
+            closeEdit() { document.getElementById('modal-edit').classList.add('hidden'); },
+            saveEdit() { localStorage.setItem(document.getElementById('edit-key-hidden').value, document.getElementById('edit-area').value); Utils.toast("List Updated", "success"); this.closeEdit(); this.render(); },
+            render() {
+                const grid = document.getElementById('contact-grid'); const sel = document.getElementById('list-selector'); 
+                grid.innerHTML = ''; sel.innerHTML = '<option value="">Load Saved List...</option>';
+                
+                Object.keys(localStorage).forEach(k => {
+                    if(k.startsWith('nexus_list_')) {
+                        const name = k.replace('nexus_list_', '');
+                        const count = (localStorage.getItem(k).match(/\n/g)||[]).length + 1;
+                        
+                        // Grid Item
+                        const div = document.createElement('div'); 
+                        div.className = "flex justify-between items-center p-2 border border-slate-100 rounded-lg bg-slate-50 hover:border-slate-300 transition-colors";
+                        div.innerHTML = `
+                            <div class="overflow-hidden">
+                                <span class="text-xs font-bold text-slate-700 truncate block w-24">${name}</span>
+                                <span class="text-[10px] text-slate-400 font-mono">${count} items</span>
+                            </div>
+                            <div class="flex gap-1">
+                                <button onclick="ContactManager.loadListToSelection('${k}')" title="Load to Selection" class="text-slate-400 hover:text-brand-600 p-1.5 bg-white rounded border border-slate-200"><i data-lucide="list-plus" class="w-3 h-3"></i></button>
+                                <button onclick="Database.openEdit('${k}')" class="text-slate-400 hover:text-blue-600 p-1.5 bg-white rounded border border-slate-200"><i data-lucide="pencil" class="w-3 h-3"></i></button>
+                                <button onclick="Database.delete('${k}')" class="text-slate-400 hover:text-red-500 p-1.5 bg-white rounded border border-slate-200"><i data-lucide="trash" class="w-3 h-3"></i></button>
+                            </div>`;
+                        grid.appendChild(div); 
+                        
+                        // Dropdown Item
+                        const opt = document.createElement('option'); opt.value = k; opt.innerText = `${name} (${count})`; sel.appendChild(opt);
+                    }
+                });
+                lucide.createIcons();
             }
         };
 
@@ -308,93 +465,133 @@
             async loadGroups() {
                 if(State.status !== 'READY') return Utils.toast("Connect WhatsApp first!", "error");
                 const select = document.getElementById('group-selector');
+                const btn = document.getElementById('btn-load-groups');
+                btn.innerText = "Loading...";
                 try {
                     const res = await Session.api(`groups/${State.user}`);
                     select.innerHTML = '<option value="">Select List...</option>';
                     res.groups.forEach(g => { const opt = document.createElement('option'); opt.value = g.id; opt.innerText = `${g.name} (${g.count})`; select.appendChild(opt); });
-                    select.disabled = false; select.onchange = () => { const on = !!select.value; const btn = document.getElementById('btn-import'); btn.disabled = !on; btn.classList.toggle('opacity-50', !on); btn.classList.toggle('cursor-not-allowed', !on); };
+                    select.disabled = false; select.onchange = () => { const on = !!select.value; const impBtn = document.getElementById('btn-import'); impBtn.disabled = !on; impBtn.classList.toggle('opacity-50', !on); impBtn.classList.toggle('cursor-not-allowed', !on); };
                     Utils.toast(`Found ${res.groups.length} lists`, "success");
                 } catch(e) { Utils.toast("Error loading groups"); }
+                btn.innerText = "FETCH";
             },
             async fetchSelected() {
-                const grp = document.getElementById('group-selector'); const btn = document.getElementById('btn-import'); btn.innerText = `...`;
+                const grp = document.getElementById('group-selector'); const btn = document.getElementById('btn-import'); btn.innerText = `Importing...`;
                 try {
                     const res = await Session.api(`get-members?id=${State.user}&groupJid=${encodeURIComponent(grp.value)}`);
                     localStorage.setItem(`nexus_list_WA_${grp.options[grp.selectedIndex].text.split('(')[0].trim().replace(/[^a-z0-9]/gi, '_')}`, res.members.map(m=>m.number).join('\n'));
                     Utils.toast(`Imported ${res.count} contacts`, "success"); Database.render();
-                } catch(e) { Utils.toast("Import failed"); } finally { btn.innerText = `Import Selected`; }
-            }
-        };
-
-        const Database = {
-            delete(key) { if(confirm("Delete?")) { localStorage.removeItem(key); this.render(); } },
-            loadList(val) { if(val) { document.getElementById('camp-input').value = localStorage.getItem(val); Utils.toast("List Loaded"); } },
-            openEdit(key) { document.getElementById('edit-key-hidden').value = key; document.getElementById('edit-area').value = localStorage.getItem(key); document.getElementById('modal-edit').classList.remove('hidden'); },
-            closeEdit() { document.getElementById('modal-edit').classList.add('hidden'); },
-            saveEdit() { localStorage.setItem(document.getElementById('edit-key-hidden').value, document.getElementById('edit-area').value); Utils.toast("Updated", "success"); this.closeEdit(); this.render(); },
-            render() {
-                const grid = document.getElementById('contact-grid'); const sel = document.getElementById('list-selector'); grid.innerHTML = ''; sel.innerHTML = '<option value="">Load List...</option>';
-                Object.keys(localStorage).forEach(k => {
-                    if(k.startsWith('nexus_list_')) {
-                        const name = k.replace('nexus_list_', '');
-                        const div = document.createElement('div'); div.className = "flex justify-between items-center p-2 border border-slate-100 rounded bg-slate-50";
-                        div.innerHTML = `<span class="text-xs font-bold text-slate-700 truncate w-20">${name} (${(localStorage.getItem(k).match(/\n/g)||[]).length + 1})</span><div class="flex gap-1"><button onclick="Database.openEdit('${k}')" class="text-slate-400 hover:text-blue-500 p-1"><i data-lucide="pencil" class="w-3 h-3"></i></button><button onclick="Database.delete('${k}')" class="text-slate-400 hover:text-red-500 p-1"><i data-lucide="trash" class="w-3 h-3"></i></button></div>`;
-                        grid.appendChild(div); const opt = document.createElement('option'); opt.value = k; opt.innerText = name; sel.appendChild(opt);
-                    }
-                });
-                lucide.createIcons();
+                } catch(e) { Utils.toast("Import failed"); } finally { btn.innerText = `Import Members`; }
             }
         };
 
         const Engine = {
             async handleFile(i) { if(i.files[0]) { document.getElementById('file-name').innerText = i.files[0].name; State.activeFile = await Utils.processFile(i.files[0]); } },
             queue() {
-                const raw = document.getElementById('camp-input').value; const matches = raw.matchAll(/(?:\+?(\d{1,3}))?[-. (]*(\d{3})[-. )]*(\d{3})[-. ]*(\d{4})/g);
-                for (const m of matches) { const num = m[0].replace(/\D/g, ''); if(num.length >= 10) State.queue.push({ number: num, msgs: [{ msg: document.getElementById('camp-msg').value, file: State.activeFile }] }); }
-                document.getElementById('queue-count').innerText = State.queue.length; Utils.toast(`${State.queue.length} Queued`, "success");
+                const raw = document.getElementById('camp-input').value; 
+                if(!raw.trim()) return Utils.toast("Input empty", "error");
+                
+                const matches = raw.matchAll(/(?:\+?(\d{1,3}))?[-. (]*(\d{3})[-. )]*(\d{3})[-. ]*(\d{4})/g);
+                let count = 0;
+                for (const m of matches) { 
+                    const num = m[0].replace(/\D/g, ''); 
+                    if(num.length >= 10) { 
+                        State.queue.push({ number: num, msgs: [{ msg: document.getElementById('camp-msg').value, file: State.activeFile }] }); 
+                        count++;
+                    } 
+                }
+                this.updateUI();
+                Utils.toast(`${count} contacts added to Queue`, "success");
             },
-            toggle() { State.isRunning = !State.isRunning; document.getElementById('btn-engine-toggle').innerText = State.isRunning ? "PAUSE" : "START"; if(State.isRunning) this.process(); },
-            clear() { State.queue=[]; document.getElementById('queue-count').innerText = 0; },
+            toggle() { 
+                State.isRunning = !State.isRunning; 
+                this.updateUI();
+                if(State.isRunning) {
+                    this.process(); 
+                    Utils.toast("Engine Started", "success");
+                } else {
+                    Utils.toast("Engine Paused", "info");
+                }
+            },
+            clear() { 
+                if(confirm("Clear entire queue?")) {
+                    State.queue=[]; 
+                    State.isRunning = false;
+                    this.updateUI();
+                    Utils.toast("Queue Cleared");
+                }
+            },
+            updateUI() {
+                const btn = document.getElementById('btn-engine-toggle');
+                document.getElementById('queue-count').innerText = State.queue.length;
+                
+                if (State.isRunning) {
+                    btn.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span> PAUSE`;
+                    btn.className = "text-[10px] font-bold px-4 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-all border border-red-600 shadow-md flex items-center gap-2";
+                    document.getElementById('status-light').className = "w-2 h-2 rounded-full bg-emerald-500 animate-pulse-fast shadow-[0_0_8px_#10b981]";
+                } else {
+                    btn.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> START`;
+                    btn.className = "text-[10px] font-bold px-4 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-all border border-emerald-200 shadow-sm flex items-center gap-2";
+                    document.getElementById('status-light').className = "w-2 h-2 rounded-full bg-slate-300";
+                }
+            },
             async process() {
-                if(!State.isRunning || State.queue.length === 0) { State.isRunning = false; document.getElementById('btn-engine-toggle').innerText = "START"; return; }
-                const target = State.queue.shift(); document.getElementById('queue-count').innerText = State.queue.length;
+                if(!State.isRunning) return; 
+                
+                if(State.queue.length === 0) { 
+                    State.isRunning = false; 
+                    this.updateUI(); 
+                    Utils.toast("Queue Finished", "success");
+                    return; 
+                }
+
+                const target = State.queue.shift(); 
+                this.updateUI();
+                
                 const log = document.getElementById('console-logs');
-                log.prepend(Object.assign(document.createElement('div'), { className: "text-slate-500", innerText: `> Sending to ${target.number}...` }));
-                await Session.api('send', { id: State.user, number: target.number, message: target.msgs[0].msg, file: target.msgs[0].file });
-                log.prepend(Object.assign(document.createElement('div'), { className: "text-emerald-600", innerText: `> Sent` }));
-                document.getElementById('stat-sent').innerText = ++State.processedCount;
-                await Utils.sleep(Math.random() * 2000 + 1000); this.process();
+                const logItem = document.createElement('div');
+                logItem.className = "text-slate-500 border-l-2 border-slate-200 pl-2 text-[10px]";
+                logItem.innerText = `> ${target.number} ...`;
+                log.prepend(logItem);
+
+                try {
+                    await Session.api('send', { id: State.user, number: target.number, message: target.msgs[0].msg, file: target.msgs[0].file });
+                    logItem.className = "text-emerald-600 border-l-2 border-emerald-500 pl-2 font-bold text-[10px]";
+                    logItem.innerText = `> ${target.number} [SENT]`;
+                    document.getElementById('stat-sent').innerText = ++State.processedCount;
+                } catch(e) {
+                    logItem.className = "text-red-500 border-l-2 border-red-500 pl-2 text-[10px]";
+                    logItem.innerText = `> ${target.number} [FAIL]`;
+                }
+
+                // Random delay between 1s and 3s
+                const delay = Math.floor(Math.random() * 2000) + 1000;
+                setTimeout(() => this.process(), delay);
             }
         };
         
-        const Router = { go(p) { ['dashboard','campaigns','contacts','settings'].forEach(v => { document.getElementById(`view-${v}`).classList.add('hidden'); document.getElementById(`nav-${v}`).className = `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs transition-all ${Styles.navInactive}`; }); document.getElementById(`view-${p}`).classList.remove('hidden'); document.getElementById(`nav-${p}`).className = `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs transition-all ${Styles.navActive}`; document.getElementById('page-title').innerText = p.charAt(0).toUpperCase() + p.slice(1); document.getElementById('mobile-overlay').classList.add('hidden'); document.getElementById('sidebar').classList.add('-translate-x-full'); } };
-        const Settings = { save(k, v) { State.settings[k]=v; localStorage.setItem('nexus_settings', JSON.stringify(State.settings)); }, load(){ const s=localStorage.getItem('nexus_settings'); if(s) State.settings=JSON.parse(s); } };
-        
-        const UI = {
-            renderSession() {
-                document.getElementById('btn-c1').className = `flex-1 py-1.5 text-[10px] font-bold rounded uppercase transition-all ${State.user==='client-1' ? Styles.nodeActive : Styles.nodeInactive}`;
-                document.getElementById('btn-c2').className = `flex-1 py-1.5 text-[10px] font-bold rounded uppercase transition-all ${State.user==='client-2' ? Styles.nodeActive : Styles.nodeInactive}`;
-                const dot = document.getElementById('conn-dot'); const area = document.getElementById('action-area'); const modal = document.getElementById('modal-qr');
-                modal.classList.add('hidden');
-                if (State.status === 'READY') {
-                    dot.className = "w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e]";
-                    area.innerHTML = `<button onclick="Session.stop()" class="w-full py-2 bg-white border border-red-200 text-red-500 hover:bg-red-50 text-xs font-bold rounded-lg transition-colors">Disconnect</button>`;
-                } else if (State.status === 'QR_READY' && State.qr) {
-                    dot.className = "w-2 h-2 rounded-full bg-blue-500 animate-pulse";
-                    area.innerHTML = `<button onclick="document.getElementById('modal-qr').classList.remove('hidden')" class="w-full py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-lg transition-colors">View QR Code</button>`;
-                    modal.classList.remove('hidden'); new QRious({ element: document.getElementById('qr-canvas'), value: State.qr, size: 200 });
-                } else if (State.status === 'INIT') {
-                    dot.className = "w-2 h-2 rounded-full bg-amber-500 animate-ping";
-                    area.innerHTML = `<button class="w-full py-2 bg-slate-100 text-slate-400 text-xs font-bold rounded-lg cursor-not-allowed flex justify-center gap-2"><div class="w-3 h-3 border-2 border-slate-300 border-b-slate-500 rounded-full animate-spin"></div> Syncing...</button>`;
-                } else {
-                    dot.className = "w-2 h-2 rounded-full bg-slate-300";
-                    area.innerHTML = `<button onclick="Session.start()" class="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-2"><i data-lucide="power" class="w-3 h-3"></i> Initialize</button>`;
-                }
-                lucide.createIcons();
-            }
+        const Router = { 
+            go(p) { 
+                ['dashboard','campaigns','contacts','settings'].forEach(v => { 
+                    document.getElementById(`view-${v}`).classList.add('hidden'); 
+                    document.getElementById(`nav-${v}`).className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-all"; 
+                }); 
+                document.getElementById(`view-${p}`).classList.remove('hidden'); 
+                document.getElementById(`nav-${p}`).className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold text-brand-600 bg-brand-50 transition-all"; 
+                document.getElementById('page-title').innerText = p.charAt(0).toUpperCase() + p.slice(1); 
+                document.getElementById('mobile-overlay').classList.add('hidden'); 
+                document.getElementById('sidebar').classList.add('-translate-x-full'); 
+            } 
         };
 
-        Session.poll(); Database.render(); Settings.load(); UI.renderSession();
+        const Settings = { save(k, v) { State.settings[k]=v; localStorage.setItem('nexus_settings', JSON.stringify(State.settings)); }, load(){ const s=localStorage.getItem('nexus_settings'); if(s) State.settings=JSON.parse(s); } };
+
+        // Initialize
+        Session.poll(); 
+        Database.render(); 
+        Settings.load(); 
+        UI.renderSession();
     </script>
 </body>
 </html>
