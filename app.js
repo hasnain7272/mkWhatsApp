@@ -12,23 +12,27 @@ const express = require('express');
 const cors = require('cors');
 const { MongoClient } = require('mongodb');
 const path = require('path');
+const NodeCache = require('node-cache'); 
 
 const app = express();
 const PORT = process.env.PORT || 3001; 
 const MONGO_URL = process.env.MONGO_URL; 
 
 app.use(cors());
+// 🚀 Increased limit to 60mb to allow large media uploads (Images/Videos)
 app.use(express.json({ limit: '60mb' }));
-app.use(express.static(path.join(__dirname, 'docs'))); // Serving from 'docs'
 
-// --- 🛠️ CUSTOM MONGODB AUTH (The Fix) ---
-// We write this manually to ensure it works with the latest Baileys
+// 📂 Serve Frontend from the 'docs' folder
+app.use(express.static(path.join(__dirname, 'docs')));
+
+// --- 🛠️ CUSTOM MONGODB AUTH (Stable) ---
+// This handles the database connection manually to prevent "undefined" crashes
 const initAuth = async (collection) => {
     const readData = async (id) => {
         try {
             const data = await collection.findOne({ _id: id });
             if (data && data.value) {
-                // Deserialize the JSON back into Buffers
+                // Restore binary data from JSON
                 return JSON.parse(JSON.stringify(data.value), BufferJSON.reviver);
             }
             return null;
@@ -37,19 +41,14 @@ const initAuth = async (collection) => {
 
     const writeData = async (id, data) => {
         try {
-            // Serialize Buffers to JSON to save safely in Mongo
+            // Convert binary to JSON for storage
             const value = JSON.parse(JSON.stringify(data, BufferJSON.replacer));
-            await collection.updateOne(
-                { _id: id },
-                { $set: { value } },
-                { upsert: true }
-            );
+            await collection.updateOne({ _id: id }, { $set: { value } }, { upsert: true });
         } catch (error) { console.error('Error writing auth:', error); }
     };
 
     const removeData = async (id) => {
-        try { await collection.deleteOne({ _id: id }); } 
-        catch (error) { console.error('Error removing auth:', error); }
+        try { await collection.deleteOne({ _id: id }); } catch (error) {}
     };
 
     const creds = await readData('creds') || (await import('@whiskeysockets/baileys')).initAuthCreds();
@@ -75,8 +74,7 @@ const initAuth = async (collection) => {
                         for (const id in data[category]) {
                             const value = data[category][id];
                             const key = `${category}-${id}`;
-                            if (value) tasks.push(writeData(key, value));
-                            else tasks.push(removeData(key));
+                            if (value) tasks.push(writeData(key, value)); else tasks.push(removeData(key));
                         }
                     }
                     await Promise.all(tasks);
@@ -86,34 +84,29 @@ const initAuth = async (collection) => {
         saveCreds: () => writeData('creds', creds)
     };
 };
-// ------------------------------------------
 
-// In-Memory Store for contacts/chats
+// 🧠 In-Memory Store (Fast RAM Access)
 function makeInMemoryStore(id) {
     let state = { contacts: {}, chats: {} };
     return {
         get contacts() { return state.contacts; },
         get chats() { return state.chats; },
         bind: (ev) => {
-            ev.on('contacts.upsert', (contacts) => {
-                contacts.forEach(c => state.contacts[c.id] = Object.assign(state.contacts[c.id] || {}, c));
-            });
+            ev.on('contacts.upsert', (contacts) => contacts.forEach(c => state.contacts[c.id] = Object.assign(state.contacts[c.id] || {}, c)));
         }
     };
 }
 
 const sessions = {}; 
+const msgRetryCounterCache = new NodeCache();
 
 async function createSession(id) {
     try {
         console.log(`[${id}] Connecting to DB...`);
         const mongo = new MongoClient(MONGO_URL);
         await mongo.connect();
-        
-        // Create a specific collection for this session ID
         const collection = mongo.db("whatsapp_bot").collection(`session_${id}`);
 
-        // Use our CUSTOM Auth
         const { state, saveCreds } = await initAuth(collection);
         const { version } = await fetchLatestBaileysVersion();
         const store = makeInMemoryStore(id);
@@ -124,13 +117,12 @@ async function createSession(id) {
             version,
             logger: pino({ level: 'silent' }),
             printQRInTerminal: false,
-            browser: Browsers.ubuntu("Chrome"),
+            browser: Browsers.ubuntu("Chrome"), // Use Ubuntu browser to avoid 401 errors
             auth: {
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" })),
             },
-            // Important: Fixes some retry loops
-            msgRetryCounterCache: new (require('node-cache'))(), 
+            msgRetryCounterCache, 
             generateHighQualityLinkPreview: true,
         });
 
@@ -143,42 +135,31 @@ async function createSession(id) {
             const { connection, lastDisconnect, qr } = update;
 
             if (qr) {
-                console.log(`[${id}] QR GENERATED`);
                 sessions[id].qr = qr;
                 sessions[id].status = 'QR_READY';
             }
-
             if (connection === 'open') {
                 console.log(`[${id}] 🟢 ONLINE`);
                 sessions[id].status = 'READY';
                 sessions[id].qr = null; 
             }
-
             if (connection === 'close') {
                 const reason = (lastDisconnect?.error)?.output?.statusCode;
                 console.log(`[${id}] 🔴 Closed: ${reason}`);
-
-                // Prevent infinite loop if "undefined" error occurs
                 const shouldReconnect = reason !== DisconnectReason.loggedOut && reason !== undefined;
-                
                 delete sessions[id];
-
-                if (shouldReconnect) {
-                    setTimeout(() => createSession(id), 3000); // 3s cool-down
-                } else {
-                    console.log(`[${id}] ⚠️ Fatal error or Logged out. Not reconnecting.`);
-                    // If it was undefined, we try ONE more time after a long delay, just in case
-                    if (reason === undefined) setTimeout(() => createSession(id), 10000);
-                }
+                
+                // Smart Reconnect Logic
+                if (shouldReconnect) setTimeout(() => createSession(id), 3000); 
+                else if (reason === undefined) setTimeout(() => createSession(id), 10000);
             }
         });
-
-    } catch (err) {
-        console.error(`[${id}] Failed to create session:`, err);
-    }
+    } catch (err) { console.error(`[${id}] Error:`, err); }
 }
 
-// --- ROUTES ---
+// --- 🔌 API ENDPOINTS ---
+
+// Serve the HTML file at the root URL
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'docs', 'index.html')); });
 
 app.post('/api/start', (req, res) => { 
@@ -199,28 +180,88 @@ app.post('/api/logout', async (req, res) => {
         delete sessions[id];
     }
     // Also clear DB
-    const mongo = new MongoClient(MONGO_URL);
-    await mongo.connect();
-    await mongo.db("whatsapp_bot").collection(`session_${id}`).drop();
+    try {
+        const mongo = new MongoClient(MONGO_URL);
+        await mongo.connect();
+        await mongo.db("whatsapp_bot").collection(`session_${id}`).drop();
+    } catch(e) {}
     res.json({ success: true }); 
 });
 
+// --- 🔥 MEDIA SENDING LOGIC ---
 app.post('/api/send', async (req, res) => {
-    const { id, number, message } = req.body;
+    const { id, number, message, file } = req.body;
+    
     if (!sessions[id] || sessions[id].status !== 'READY') return res.status(400).json({ error: "Offline" });
+    
     try {
-        await sessions[id].sock.sendMessage(number + "@s.whatsapp.net", { text: message });
+        const jid = number + "@s.whatsapp.net";
+        let payload;
+
+        // If file exists, convert Base64 -> Buffer
+        if (file && file.data) {
+            const buffer = Buffer.from(file.data, 'base64');
+            const mimetype = file.mimetype;
+
+            if (mimetype.startsWith('image/')) {
+                payload = { image: buffer, caption: message, mimetype: mimetype };
+            } else if (mimetype.startsWith('video/')) {
+                payload = { video: buffer, caption: message, mimetype: mimetype };
+            } else if (mimetype.startsWith('audio/')) {
+                 payload = { audio: buffer, mimetype: mimetype };
+            } else {
+                payload = { 
+                    document: buffer, 
+                    caption: message, 
+                    mimetype: mimetype, 
+                    fileName: file.filename || 'file.bin' 
+                };
+            }
+        } else {
+            payload = { text: message || "" };
+        }
+
+        await sessions[id].sock.sendMessage(jid, payload);
         res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+
+    } catch (e) { 
+        console.error("Send Error:", e);
+        res.status(500).json({ error: e.message }); 
+    }
 });
 
 app.get('/api/contacts/:id', (req, res) => {
     if (!sessions[req.params.id]) return res.json({ count: 0, contacts: [] });
-    const contacts = Object.values(sessions[req.params.id].store.contacts).map(c => ({ 
-        name: c.name || c.notify, 
-        number: c.id.split('@')[0] 
-    }));
+    // Filter & Format contacts for the frontend
+    const contacts = Object.values(sessions[req.params.id].store.contacts)
+        .filter(c => c.id.endsWith('@s.whatsapp.net'))
+        .map(c => ({ 
+            name: c.name || c.notify || c.verifiedName || "Unknown", 
+            number: c.id.split('@')[0] 
+        }));
     res.json({ success: true, count: contacts.length, contacts });
+});
+
+app.get('/api/groups/:id', (req, res) => {
+    if (!sessions[req.params.id]) return res.json({ count: 0, groups: [] });
+    const groups = Object.values(sessions[req.params.id].store.chats)
+        .filter(c => c.id.endsWith('@g.us'))
+        .map(c => ({ 
+            id: c.id, 
+            name: c.subject || 'Unknown', 
+            count: c.participant?.length || 0 
+        }));
+    res.json({ success: true, count: groups.length, groups });
+});
+
+app.get('/api/get-members', async (req, res) => {
+    try {
+        const { id, groupJid } = req.query;
+        if (!sessions[id]) return res.status(400).json({ error: "Offline" });
+        const meta = await sessions[id].sock.groupMetadata(groupJid);
+        const members = meta.participants.map(p => ({ number: p.id.split('@')[0] }));
+        res.json({ count: members.length, members });
+    } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.listen(PORT, () => console.log(`🚀 Server running on Port ${PORT}`));
