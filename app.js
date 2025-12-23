@@ -24,7 +24,7 @@ const MONGO_URL = process.env.MONGO_URL || "mongodb+srv://YOUR_MONGO_URL_HERE";
 app.use(cors()); // Allow all connections (Great for testing)
 app.use(express.json({ limit: '60mb' }));
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'docs')));
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
