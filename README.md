@@ -1,10 +1,6 @@
----
-
 # Nexus OS | Enterprise SaaS
 
 **Nexus OS** is a lightweight, single-file frontend architecture designed for high-performance WhatsApp marketing and contact management. It features a zero-build environment, utilizing Tailwind CSS via CDN and vanilla JavaScript for a robust, "Enterprise-grade" experience directly in the browser.
-
----
 
 ## 🚀 Key Features
 
