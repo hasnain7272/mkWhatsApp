@@ -19,32 +19,24 @@ const PORT = process.env.PORT || 3001;
 const MONGO_URL = process.env.MONGO_URL; 
 
 app.use(cors());
-// 🚀 Increased limit to 60mb to allow large media uploads (Images/Videos)
 app.use(express.json({ limit: '60mb' }));
-
-// 📂 Serve Frontend from the 'docs' folder
 app.use(express.static(path.join(__dirname, 'docs')));
 
-// --- 🛠️ CUSTOM MONGODB AUTH (Stable) ---
-// This handles the database connection manually to prevent "undefined" crashes
+// --- 🛠️ 1. AUTH HANDLER (Saves Login Keys) ---
 const initAuth = async (collection) => {
     const readData = async (id) => {
         try {
             const data = await collection.findOne({ _id: id });
-            if (data && data.value) {
-                // Restore binary data from JSON
-                return JSON.parse(JSON.stringify(data.value), BufferJSON.reviver);
-            }
+            if (data && data.value) return JSON.parse(JSON.stringify(data.value), BufferJSON.reviver);
             return null;
         } catch (error) { return null; }
     };
 
     const writeData = async (id, data) => {
         try {
-            // Convert binary to JSON for storage
             const value = JSON.parse(JSON.stringify(data, BufferJSON.replacer));
             await collection.updateOne({ _id: id }, { $set: { value } }, { upsert: true });
-        } catch (error) { console.error('Error writing auth:', error); }
+        } catch (error) { console.error('Auth Write Error:', error); }
     };
 
     const removeData = async (id) => {
@@ -85,17 +77,71 @@ const initAuth = async (collection) => {
     };
 };
 
-// 🧠 In-Memory Store (Fast RAM Access)
-function makeInMemoryStore(id) {
+// --- 💾 2. PERSISTENT STORE (Saves Contacts to DB) ---
+const makePersistentStore = async (id, mongoClient) => {
+    // We use a separate collection for contacts to keep things organized
+    const contactsCol = mongoClient.db("whatsapp_bot").collection(`contacts_${id}`);
+    
     let state = { contacts: {}, chats: {} };
+
+    // A. Load contacts from DB at startup
+    console.log(`[${id}] 📥 Loading contacts from DB...`);
+    try {
+        const docs = await contactsCol.find({}).toArray();
+        if (docs.length > 0) {
+            docs.forEach(c => state.contacts[c._id] = c);
+            console.log(`[${id}] ✅ Restored ${docs.length} contacts from DB.`);
+        } else {
+            console.log(`[${id}] ℹ️ No contacts in DB. Waiting for scan...`);
+        }
+    } catch (e) { console.error(`[${id}] DB Load Error:`, e); }
+
+    // Helper to bulk save contacts
+    const saveToDb = async (contacts) => {
+        if (!contacts.length) return;
+        const ops = contacts.map(c => ({
+            updateOne: {
+                filter: { _id: c.id },
+                update: { $set: Object.assign({ _id: c.id }, c) }, // Ensure _id is set
+                upsert: true
+            }
+        }));
+        try { await contactsCol.bulkWrite(ops); } catch (e) { console.error('Contact Write Error:', e); }
+    };
+
     return {
         get contacts() { return state.contacts; },
         get chats() { return state.chats; },
         bind: (ev) => {
-            ev.on('contacts.upsert', (contacts) => contacts.forEach(c => state.contacts[c.id] = Object.assign(state.contacts[c.id] || {}, c)));
+            // B. Listen for the massive history sync (First Scan)
+            ev.on('messaging-history.set', async ({ contacts }) => {
+                console.log(`[${id}] 🔄 History Sync: ${contacts.length} contacts. Saving...`);
+                // Update RAM
+                contacts.forEach(c => state.contacts[c.id] = Object.assign(state.contacts[c.id] || {}, c));
+                // Update DB
+                await saveToDb(contacts);
+            });
+
+            // C. Listen for new contacts / updates
+            ev.on('contacts.upsert', async (contacts) => {
+                contacts.forEach(c => state.contacts[c.id] = Object.assign(state.contacts[c.id] || {}, c));
+                await saveToDb(contacts);
+            });
+            
+            // D. Listen for contact name updates
+            ev.on('contacts.update', async (updates) => {
+                const updatedContacts = [];
+                updates.forEach(u => {
+                    if (state.contacts[u.id]) {
+                        Object.assign(state.contacts[u.id], u);
+                        updatedContacts.push(state.contacts[u.id]);
+                    }
+                });
+                await saveToDb(updatedContacts);
+            });
         }
     };
-}
+};
 
 const sessions = {}; 
 const msgRetryCounterCache = new NodeCache();
@@ -105,11 +151,14 @@ async function createSession(id) {
         console.log(`[${id}] Connecting to DB...`);
         const mongo = new MongoClient(MONGO_URL);
         await mongo.connect();
-        const collection = mongo.db("whatsapp_bot").collection(`session_${id}`);
-
-        const { state, saveCreds } = await initAuth(collection);
+        
+        const authCol = mongo.db("whatsapp_bot").collection(`session_${id}`);
+        const { state, saveCreds } = await initAuth(authCol);
+        
         const { version } = await fetchLatestBaileysVersion();
-        const store = makeInMemoryStore(id);
+        
+        // 🔥 Use Persistent Store instead of Memory Store
+        const store = await makePersistentStore(id, mongo);
 
         console.log(`[${id}] Starting Socket...`);
 
@@ -117,13 +166,16 @@ async function createSession(id) {
             version,
             logger: pino({ level: 'silent' }),
             printQRInTerminal: false,
-            browser: Browsers.ubuntu("Chrome"), // Use Ubuntu browser to avoid 401 errors
+            browser: Browsers.ubuntu("Chrome"),
             auth: {
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" })),
             },
             msgRetryCounterCache, 
             generateHighQualityLinkPreview: true,
+            // Optimization: Don't wait for full history if we already have data, 
+            // but for first run with this code, we want it.
+            syncFullHistory: true 
         });
 
         store.bind(sock.ev);
@@ -149,7 +201,6 @@ async function createSession(id) {
                 const shouldReconnect = reason !== DisconnectReason.loggedOut && reason !== undefined;
                 delete sessions[id];
                 
-                // Smart Reconnect Logic
                 if (shouldReconnect) setTimeout(() => createSession(id), 3000); 
                 else if (reason === undefined) setTimeout(() => createSession(id), 10000);
             }
@@ -157,9 +208,8 @@ async function createSession(id) {
     } catch (err) { console.error(`[${id}] Error:`, err); }
 }
 
-// --- 🔌 API ENDPOINTS ---
+// --- API ROUTES ---
 
-// Serve the HTML file at the root URL
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'docs', 'index.html')); });
 
 app.post('/api/start', (req, res) => { 
@@ -173,66 +223,48 @@ app.get('/api/status/:id', (req, res) => {
     res.json({ status: s ? s.status : 'OFFLINE', qr: s ? s.qr : null }); 
 });
 
+// 🔥 Logout Route (Use this to force a re-scan)
 app.post('/api/logout', async (req, res) => { 
     const { id } = req.body;
     if (sessions[id]) {
         try { await sessions[id].sock.logout(); } catch(e){}
         delete sessions[id];
     }
-    // Also clear DB
-    try {
-        const mongo = new MongoClient(MONGO_URL);
-        await mongo.connect();
-        await mongo.db("whatsapp_bot").collection(`session_${id}`).drop();
-    } catch(e) {}
+    // Note: We do NOT delete the contacts collection here, so data persists.
+    // If you WANT to wipe contacts, uncomment the next line:
+    // await new MongoClient(MONGO_URL).connect().then(m => m.db("whatsapp_bot").collection(`contacts_${id}`).drop());
+    
+    // We DO wipe the session keys so you can scan again
+    const mongo = new MongoClient(MONGO_URL);
+    await mongo.connect();
+    await mongo.db("whatsapp_bot").collection(`session_${id}`).drop();
+    
     res.json({ success: true }); 
 });
 
-// --- 🔥 MEDIA SENDING LOGIC ---
 app.post('/api/send', async (req, res) => {
     const { id, number, message, file } = req.body;
-    
     if (!sessions[id] || sessions[id].status !== 'READY') return res.status(400).json({ error: "Offline" });
-    
     try {
         const jid = number + "@s.whatsapp.net";
         let payload;
-
-        // If file exists, convert Base64 -> Buffer
         if (file && file.data) {
             const buffer = Buffer.from(file.data, 'base64');
             const mimetype = file.mimetype;
-
-            if (mimetype.startsWith('image/')) {
-                payload = { image: buffer, caption: message, mimetype: mimetype };
-            } else if (mimetype.startsWith('video/')) {
-                payload = { video: buffer, caption: message, mimetype: mimetype };
-            } else if (mimetype.startsWith('audio/')) {
-                 payload = { audio: buffer, mimetype: mimetype };
-            } else {
-                payload = { 
-                    document: buffer, 
-                    caption: message, 
-                    mimetype: mimetype, 
-                    fileName: file.filename || 'file.bin' 
-                };
-            }
+            if (mimetype.startsWith('image/')) payload = { image: buffer, caption: message, mimetype: mimetype };
+            else if (mimetype.startsWith('video/')) payload = { video: buffer, caption: message, mimetype: mimetype };
+            else if (mimetype.startsWith('audio/')) payload = { audio: buffer, mimetype: mimetype };
+            else payload = { document: buffer, caption: message, mimetype: mimetype, fileName: file.filename || 'file.bin' };
         } else {
             payload = { text: message || "" };
         }
-
         await sessions[id].sock.sendMessage(jid, payload);
         res.json({ success: true });
-
-    } catch (e) { 
-        console.error("Send Error:", e);
-        res.status(500).json({ error: e.message }); 
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/contacts/:id', (req, res) => {
     if (!sessions[req.params.id]) return res.json({ count: 0, contacts: [] });
-    // Filter & Format contacts for the frontend
     const contacts = Object.values(sessions[req.params.id].store.contacts)
         .filter(c => c.id.endsWith('@s.whatsapp.net'))
         .map(c => ({ 
@@ -246,11 +278,7 @@ app.get('/api/groups/:id', (req, res) => {
     if (!sessions[req.params.id]) return res.json({ count: 0, groups: [] });
     const groups = Object.values(sessions[req.params.id].store.chats)
         .filter(c => c.id.endsWith('@g.us'))
-        .map(c => ({ 
-            id: c.id, 
-            name: c.subject || 'Unknown', 
-            count: c.participant?.length || 0 
-        }));
+        .map(c => ({ id: c.id, name: c.subject || 'Unknown', count: c.participant?.length || 0 }));
     res.json({ success: true, count: groups.length, groups });
 });
 
