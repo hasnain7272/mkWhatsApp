@@ -107,7 +107,6 @@
                     <div class="bg-brand-50 p-3 rounded-lg border border-brand-100 mb-3">
                         <p class="text-[10px] font-bold text-brand-700 uppercase mb-1">Format Guide</p>
                         <p class="text-[10px] text-brand-600 font-mono">1234567890 | John Doe</p>
-                        <p class="text-[10px] text-brand-600 font-mono">9876543210 | Jane Smith</p>
                     </div>
                     <textarea id="edit-area" class="flex-1 w-full bg-slate-50 border border-slate-200 rounded-lg p-4 text-xs font-mono outline-none focus:border-brand-500 resize-none mb-4" placeholder="Enter contacts here..."></textarea>
                     <button onclick="Database.saveEdit()" class="w-full py-2.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 transition-colors">Save Changes</button>
@@ -117,15 +116,15 @@
             <div id="view-dashboard" class="max-w-6xl mx-auto space-y-6 fade-in">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                        <div class="flex items-center gap-3 mb-2"><i data-lucide="users" class="w-4 h-4 text-brand-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Loaded Contacts</span></div>
+                        <div class="flex items-center gap-3 mb-2"><i data-lucide="users" class="w-4 h-4 text-brand-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Global Contacts</span></div>
                         <p id="stat-contacts" class="text-3xl font-bold text-slate-800 tracking-tight">0</p>
                     </div>
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                        <div class="flex items-center gap-3 mb-2"><i data-lucide="send" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Success Sent</span></div>
+                        <div class="flex items-center gap-3 mb-2"><i data-lucide="send" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Total Sent</span></div>
                         <p id="stat-sent" class="text-3xl font-bold text-slate-800 tracking-tight">0</p>
                     </div>
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                        <div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Safety Mode</span></div>
+                        <div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Protection</span></div>
                         <p class="text-3xl font-bold text-slate-800 tracking-tight">Active</p>
                     </div>
                 </div>
@@ -190,7 +189,7 @@
                             <span class="text-[10px] font-bold text-brand-600 uppercase">Selected: <span id="sel-count">0</span></span>
                         </div>
                         <div id="contact-list-container" class="flex-1 overflow-y-auto p-2 space-y-1">
-                            <div class="text-center mt-20 text-slate-400 text-xs">Sync contacts from any session to build your Global Memory.</div>
+                            <div class="text-center mt-20 text-slate-400 text-xs">Sync contacts to build Global Memory.</div>
                         </div>
                     </div>
 
@@ -277,6 +276,10 @@
         const State = { user: 'client-1', status: 'OFFLINE', qr: null, queue: [], activeFile: null, isRunning: false, processedCount: 0, settings: { batch: 20, cool: 60 }, allContacts: [], selection: new Set() };
         const Utils = {
             sleep: (ms) => new Promise(r => setTimeout(r, ms)),
+            processFile: async (file) => {
+                if (file.name.toLowerCase().endsWith('.heic')) { try { const blob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.7 }); file = new File([Array.isArray(blob)?blob[0]:blob], file.name.replace(/\.heic$/i, ".jpg"), { type: "image/jpeg" }); } catch(e) { console.error(e); } }
+                return new Promise((resolve) => { const reader = new FileReader(); reader.readAsDataURL(file); reader.onload = () => resolve({ mimetype: file.type, data: reader.result.split(',')[1], filename: file.name }); });
+            },
             toast: (msg, type='info') => {
                 const c = document.getElementById('toasts'); const el = document.createElement('div');
                 el.className = `${type === 'success' ? 'bg-emerald-600' : 'bg-slate-800'} text-white px-4 py-3 rounded-lg shadow-xl text-xs font-bold animate-bounce`;
@@ -324,7 +327,7 @@
                 const btn = document.getElementById('btn-sync'); btn.innerHTML = "...";
                 const res = await Session.api(`contacts/${State.user}`);
                 if(res && res.contacts) {
-                    // GLOBAL MERGE LOGIC (Does not clear previous list)
+                    // GLOBAL MERGE LOGIC (Retains previous contacts from other sessions)
                     const existing = new Set(State.allContacts.map(c => c.number));
                     res.contacts.forEach(c => { if(!existing.has(c.number)) State.allContacts.push(c); });
                     State.allContacts.sort((a,b) => (a.name||'').localeCompare(b.name||''));
@@ -339,7 +342,6 @@
                 list.forEach(c => {
                     const isSel = State.selection.has(c.number);
                     const el = document.createElement('div');
-                    // Render UI: Text is always dark (slate-700), bg changes on select.
                     el.className = `flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-all border mb-1 ${isSel ? 'bg-brand-50 border-brand-500' : 'bg-white border-transparent hover:bg-slate-50'}`;
                     el.onclick = () => this.toggle(c.number, el);
                     el.innerHTML = `
@@ -360,7 +362,7 @@
             toggle(num, el) {
                 if(State.selection.has(num)) State.selection.delete(num); else State.selection.add(num);
                 const isSel = State.selection.has(num);
-                // Simple Toggle Logic for Styles
+                // Toggle Styles Directly
                 if(isSel) {
                     el.className = 'flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-all border mb-1 bg-brand-50 border-brand-500';
                     el.children[0].children[0].className = 'w-8 h-8 rounded-full bg-brand-200 text-brand-700 flex items-center justify-center text-xs font-bold shrink-0';
@@ -383,9 +385,8 @@
                 const name = document.getElementById('new-list-name').value;
                 if(!name || !State.selection.size) return Utils.toast("Invalid input", "error");
                 
-                // SAVE AS JSON (Name + Number)
+                // Save name and number
                 const listData = [];
-                // Look up details from global memory for selected numbers
                 State.allContacts.forEach(c => {
                     if(State.selection.has(c.number)) listData.push({name: c.name || "Manual", number: c.number});
                 });
@@ -415,9 +416,8 @@
                         try {
                             const data = JSON.parse(localStorage.getItem(k));
                             count = data.length;
-                        } catch(e) { count = "Err"; } // Legacy support
+                        } catch(e) { count = "Old Format"; } 
                         
-                        // Card
                         const div = document.createElement('div');
                         div.className = "flex justify-between items-center p-3 bg-slate-50 border border-slate-200 rounded-lg hover:border-slate-300 transition-colors";
                         div.innerHTML = `
@@ -429,7 +429,6 @@
                         `;
                         grid.appendChild(div);
 
-                        // Option
                         const opt = document.createElement('option'); opt.value = k; opt.innerText = `${name} (${count})`;
                         sel.appendChild(opt);
                     }
@@ -438,7 +437,6 @@
             },
             del(k) { if(confirm("Delete?")) { localStorage.removeItem(k); this.render(); } },
             
-            // NEW: Edit Logic (Manual Entry)
             createNewEmpty() { this.openEdit(''); },
             openEdit(k) {
                 const modal = document.getElementById('modal-edit');
@@ -446,13 +444,12 @@
                 document.getElementById('edit-key-hidden').value = k;
                 
                 if(k && localStorage.getItem(k)) {
-                    // Convert JSON to "Number | Name" format
                     try {
                         const data = JSON.parse(localStorage.getItem(k));
                         area.value = data.map(i => `${i.number} | ${i.name}`).join('\n');
                     } catch(e) { area.value = ""; }
                 } else {
-                    area.value = ""; // New list
+                    area.value = "";
                     document.getElementById('edit-key-hidden').value = "NEW";
                 }
                 modal.classList.remove('hidden');
@@ -462,14 +459,11 @@
                 const keyInput = document.getElementById('edit-key-hidden').value;
                 const raw = document.getElementById('edit-area').value;
                 let key = keyInput;
-                
                 if(key === "NEW") {
                     const name = prompt("Enter List Name:");
                     if(!name) return;
                     key = `nexus_list_${name}`;
                 }
-
-                // Convert "Number | Name" back to JSON
                 const lines = raw.split('\n');
                 const newData = [];
                 lines.forEach(line => {
@@ -480,19 +474,16 @@
                         if(num) newData.push({ name: name, number: num });
                     }
                 });
-
                 localStorage.setItem(key, JSON.stringify(newData));
                 Utils.toast("Saved Manual List", "success");
                 this.closeEdit();
                 this.render();
             },
 
-            // Extract ONLY Numbers for Campaign
             loadListToCamp(k) { 
                 if(k) {
                     try {
                         const data = JSON.parse(localStorage.getItem(k));
-                        // Map only numbers
                         document.getElementById('camp-input').value = data.map(i => i.number).join('\n');
                         Utils.toast(`Loaded ${data.length} Numbers`, "success");
                     } catch(e) { Utils.toast("Error loading list", "error"); }
@@ -515,9 +506,8 @@
                 const id = document.getElementById('group-selector').value;
                 const res = await Session.api(`get-members?id=${State.user}&groupJid=${encodeURIComponent(id)}`);
                 if(res) {
-                    // Save as JSON
                     const listName = `nexus_list_Imp_${Date.now()}`;
-                    localStorage.setItem(listName, JSON.stringify(res.members)); // assumes API returns {name, number}
+                    localStorage.setItem(listName, JSON.stringify(res.members));
                     Utils.toast(`Imported ${res.count}`, "success"); Database.render();
                 }
             }
@@ -530,6 +520,7 @@
                 const msg = document.getElementById('camp-msg').value;
                 if(!raw) return Utils.toast("No numbers", "error");
                 const nums = raw.match(/\d{10,}/g) || [];
+                // FIXED: Passing State.activeFile to the queue
                 nums.forEach(n => State.queue.push({ number: n, msgs: [{msg: msg, file: State.activeFile}] }));
                 document.getElementById('queue-count').innerText = State.queue.length;
                 document.getElementById('queue-mini').innerText = `Q: ${State.queue.length}`;
@@ -566,14 +557,13 @@
                 document.querySelectorAll('.nav-item').forEach(n => { n.classList.remove('bg-brand-50','text-brand-600'); n.classList.add('text-slate-500'); });
                 document.getElementById(`nav-${p}`).classList.add('bg-brand-50','text-brand-600');
                 document.getElementById('page-title').innerText = p.charAt(0).toUpperCase() + p.slice(1);
-                document.getElementById('sidebar').classList.add('-translate-x-full'); // Close mobile menu
+                document.getElementById('sidebar').classList.add('-translate-x-full'); 
                 document.getElementById('mobile-overlay').classList.add('hidden');
             }
         };
 
         const Settings = { save(k,v) { State.settings[k]=v; document.getElementById(`val-${k}`).innerText = v; } };
 
-        // Init
         Session.renderBtn(); Database.render(); Session.check();
     </script>
 </body>
