@@ -12,7 +12,7 @@ const http = require('http');
 
 // 1. SETUP: Put your connection string here
 // In a real project, use process.env.MONGO_URL for security
-const MONGO_URL = "mongodb+srv://admin:YOUR_PASSWORD@cluster0.example.mongodb.net/?retryWrites=true&w=majority";
+const MONGO_URL = "mongodb+srv://mkWhatsApp:mkWhatsApp@mkwhatsapp.d2flbbr.mongodb.net/?appName=mkWhatsApp";
 
 async function startWhatsApp() {
     // 2. CONNECT TO DATABASE
