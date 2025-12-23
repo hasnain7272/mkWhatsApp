@@ -75,7 +75,7 @@
         </div>
     </aside>
 
-    <main class="flex-1 relative flex flex-col h-full overflow-hidden w-full bg-white md:bg-slate-50/30">
+    <main class="flex-1 relative flex flex-col h-full overflow-hidden w-full bg-white md:bg-slate-50/30 md:ml-72 transition-all">
         <header class="h-16 px-4 md:px-8 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-30">
             <div class="flex items-center gap-3">
                 <button onclick="UI.toggleSidebar()" class="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"><i data-lucide="menu" class="w-5 h-5"></i></button>
@@ -116,16 +116,25 @@
             <div id="view-dashboard" class="max-w-6xl mx-auto space-y-6 fade-in">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                        <div class="flex items-center gap-3 mb-2"><i data-lucide="users" class="w-4 h-4 text-brand-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Global Contacts</span></div>
-                        <p id="stat-contacts" class="text-3xl font-bold text-slate-800 tracking-tight">0</p>
+                        <div class="flex items-center gap-3 mb-2"><i data-lucide="database" class="w-4 h-4 text-brand-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Total Stored</span></div>
+                        <p id="stat-stored" class="text-3xl font-bold text-slate-800 tracking-tight">0</p>
                     </div>
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                        <div class="flex items-center gap-3 mb-2"><i data-lucide="send" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Sent</span></div>
+                        <div class="flex items-center gap-3 mb-2"><i data-lucide="send" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Lifetime Sent</span></div>
                         <p id="stat-sent" class="text-3xl font-bold text-slate-800 tracking-tight">0</p>
                     </div>
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                        <div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Safety Protocol</span></div>
-                        <p class="text-3xl font-bold text-slate-800 tracking-tight">Active</p>
+                        <div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">System Health</span></div>
+                        <p class="text-3xl font-bold text-slate-800 tracking-tight">Online</p>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+                        <h3 class="font-bold text-sm text-slate-700">Recent Campaigns</h3>
+                    </div>
+                    <div id="history-list" class="divide-y divide-slate-100 max-h-60 overflow-y-auto">
+                        <div class="p-8 text-center text-xs text-slate-400 italic">No campaign history found.</div>
                     </div>
                 </div>
             </div>
@@ -162,7 +171,7 @@
                         </div>
                     </div>
                     <div id="console-logs" class="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs bg-slate-50">
-                        <div class="text-center text-slate-400 mt-20 italic">System Ready. Config loaded.</div>
+                        <div class="text-center text-slate-400 mt-20 italic">System Ready.</div>
                     </div>
                 </div>
             </div>
@@ -223,7 +232,7 @@
                     <div class="space-y-6">
                         <div>
                             <div class="flex justify-between mb-2"><label class="text-xs font-bold text-slate-600">Batch Size</label><span id="val-batch" class="text-xs font-bold text-brand-600">20</span></div>
-                            <input type="range" min="1" max="50" value="20" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" oninput="Settings.save('batch', this.value)">
+                            <input type="range" min="5" max="50" value="20" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" oninput="Settings.save('batch', this.value)">
                             <p class="text-[10px] text-slate-400 mt-1">Messages to send before triggering cool-down.</p>
                         </div>
                         <div>
@@ -277,6 +286,23 @@
                 const c = document.getElementById('toasts'); const el = document.createElement('div');
                 el.className = `${type === 'success' ? 'bg-emerald-600' : 'bg-slate-800'} text-white px-4 py-3 rounded-lg shadow-xl text-xs font-bold animate-bounce`;
                 el.innerText = msg; c.appendChild(el); setTimeout(() => el.remove(), 3000);
+            },
+            saveHistory: (listName, msg) => {
+                const hist = JSON.parse(localStorage.getItem('nexus_history') || '[]');
+                hist.unshift({ date: new Date().toLocaleString(), list: listName || "Manual List", msg: msg.substring(0, 30) + "..." });
+                localStorage.setItem('nexus_history', JSON.stringify(hist.slice(0, 20))); // Keep last 20
+                Database.renderHistory();
+            },
+            exportCSV: (key) => {
+                try {
+                    const data = JSON.parse(localStorage.getItem(key));
+                    const csvContent = "data:text/csv;charset=utf-8," + "Name,Number\n" + data.map(e => `${e.name},${e.number}`).join("\n");
+                    const encodedUri = encodeURI(csvContent);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", encodedUri);
+                    link.setAttribute("download", `${key.replace('nexus_list_','')}.csv`);
+                    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                } catch(e) { Utils.toast("Export Failed", "error"); }
             }
         };
 
@@ -323,7 +349,6 @@
                     const existing = new Set(State.allContacts.map(c => c.number));
                     res.contacts.forEach(c => { 
                         if(!existing.has(c.number)) State.allContacts.push(c); 
-                        // Update Memory Map for saving later
                         State.tempMemory.set(c.number, c.name);
                     });
                     State.allContacts.sort((a,b) => (a.name||'').localeCompare(b.name||''));
@@ -371,13 +396,11 @@
                 this.renderList(res.slice(0, 100));
             },
             loadToSelect(key) {
-                // 1. Clear current selection first
                 this.clearSelection();
                 try {
                     const data = JSON.parse(localStorage.getItem(key));
                     data.forEach(i => {
                         State.selection.add(i.number);
-                        // Add to tempMemory so name is preserved even if not in sync list
                         State.tempMemory.set(i.number, i.name);
                     });
                     document.getElementById('sel-count').innerText = State.selection.size;
@@ -389,16 +412,12 @@
             saveSelection() {
                 const name = document.getElementById('new-list-name').value;
                 if(!name || !State.selection.size) return Utils.toast("Invalid input", "error");
-                
-                // MERGE: Uses tempMemory (Loaded Lists) + Global Contacts (Sync)
                 const listData = [];
                 State.selection.forEach(num => {
-                    // Search in Sync list first, then Memory Map
                     let contact = State.allContacts.find(c => c.number === num);
                     let cName = contact ? contact.name : (State.tempMemory.get(num) || "Manual");
                     listData.push({name: cName, number: num});
                 });
-                
                 localStorage.setItem(`nexus_list_${name}`, JSON.stringify(listData));
                 Utils.toast(`Saved ${listData.length} Contacts`, "success"); 
                 this.clearSelection(); 
@@ -424,12 +443,22 @@
                         
                         const div = document.createElement('div');
                         div.className = "flex justify-between items-center p-3 bg-slate-50 border border-slate-200 rounded-lg hover:border-slate-300 transition-colors";
-                        div.innerHTML = `<div><p class="text-xs font-bold text-slate-700">${name}</p><p class="text-[10px] text-slate-400">${count} items</p></div><div class="flex gap-1"><button onclick="ContactManager.loadToSelect('${k}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-brand-600" title="Select & Edit"><i data-lucide="check-square" class="w-3 h-3"></i></button><button onclick="Database.openEdit('${k}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-blue-600"><i data-lucide="pencil" class="w-3 h-3"></i></button><button onclick="Database.del('${k}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-red-500"><i data-lucide="trash" class="w-3 h-3"></i></button></div>`;
+                        div.innerHTML = `<div><p class="text-xs font-bold text-slate-700">${name}</p><p class="text-[10px] text-slate-400">${count} items</p></div><div class="flex gap-1"><button onclick="Utils.exportCSV('${k}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-green-600" title="Export CSV"><i data-lucide="download" class="w-3 h-3"></i></button><button onclick="ContactManager.loadToSelect('${k}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-brand-600" title="Select & Edit"><i data-lucide="check-square" class="w-3 h-3"></i></button><button onclick="Database.openEdit('${k}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-blue-600"><i data-lucide="pencil" class="w-3 h-3"></i></button><button onclick="Database.del('${k}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-red-500"><i data-lucide="trash" class="w-3 h-3"></i></button></div>`;
                         grid.appendChild(div);
                         const opt = document.createElement('option'); opt.value = k; opt.innerText = `${name} (${count})`; sel.appendChild(opt);
                     }
                 });
+                document.getElementById('stat-stored').innerText = document.querySelectorAll('[onclick^="Database.del"]').length;
                 lucide.createIcons();
+            },
+            renderHistory() {
+                const list = document.getElementById('history-list');
+                const data = JSON.parse(localStorage.getItem('nexus_history') || '[]');
+                if(data.length === 0) return;
+                list.innerHTML = '';
+                data.forEach(h => {
+                    list.innerHTML += `<div class="p-3 text-xs"><div class="flex justify-between font-bold text-slate-700"><span>${h.list}</span><span class="text-slate-400 font-normal">${h.date}</span></div><p class="text-slate-500 truncate">${h.msg}</p></div>`;
+                });
             },
             del(k) { if(confirm("Delete?")) { localStorage.removeItem(k); this.render(); } },
             createNewEmpty() { this.openEdit(''); },
@@ -466,22 +495,21 @@
                 const raw = document.getElementById('camp-input').value; const msg = document.getElementById('camp-msg').value;
                 if(!raw) return Utils.toast("No numbers", "error");
                 
-                // Lookup names for Dispatcher Display
                 const nums = raw.match(/\d{10,}/g) || [];
                 const memoryMap = new Map();
-                // Merge all known contacts into a lookup map
                 State.allContacts.forEach(c => memoryMap.set(c.number, c.name));
-                // Also check stored lists for names
                 Object.keys(localStorage).forEach(k => {
-                    if(k.startsWith('nexus_list_')) {
-                        try { JSON.parse(localStorage.getItem(k)).forEach(i => memoryMap.set(i.number, i.name)); } catch(e){}
-                    }
+                    if(k.startsWith('nexus_list_')) { try { JSON.parse(localStorage.getItem(k)).forEach(i => memoryMap.set(i.number, i.name)); } catch(e){} }
                 });
 
                 nums.forEach(n => {
                     const name = memoryMap.get(n) || "Unknown";
                     State.queue.push({ name: name, number: n, msgs: [{msg: msg, file: State.activeFile}] });
                 });
+
+                // Save to History
+                const listName = document.getElementById('camp-list-selector').options[document.getElementById('camp-list-selector').selectedIndex].text;
+                Utils.saveHistory(listName !== "Load List" ? listName : "Manual Queue", msg);
 
                 document.getElementById('queue-count').innerText = State.queue.length; document.getElementById('queue-mini').innerText = `Q: ${State.queue.length}`; Utils.toast(`${nums.length} Added`, "success");
             },
@@ -501,13 +529,14 @@
                 try {
                     await Session.api('send', { id: State.user, number: item.number, message: item.msgs[0].msg, file: item.msgs[0].file });
                     log.innerHTML = `<div class="text-emerald-600 font-bold border-l-2 border-emerald-500 pl-2 text-[10px]">> SENT: ${item.name}</div>` + log.innerHTML;
-                    document.getElementById('stat-sent').innerText = ++State.processedCount;
+                    State.processedCount++;
+                    document.getElementById('stat-sent').innerText = State.processedCount;
+                    localStorage.setItem('nexus_total_sent', State.processedCount);
                 } catch(e) {
                      log.innerHTML = `<div class="text-red-500 font-bold border-l-2 border-red-500 pl-2 text-[10px]">> FAIL: ${item.name}</div>` + log.innerHTML;
                 }
 
-                // CONFIGURABLE DELAY LOGIC (Batching)
-                let delay = Math.random() * 2000 + 2000; // Default 2-4s
+                let delay = Math.random() * 2000 + 2000;
                 if (State.processedCount % parseInt(State.settings.batch) === 0) {
                     delay = parseInt(State.settings.cool) * 1000;
                     log.innerHTML = `<div class="text-amber-500 font-bold text-center text-[10px] my-2">-- COOLING DOWN (${State.settings.cool}s) --</div>` + log.innerHTML;
@@ -519,6 +548,11 @@
 
         const Router = { go(p) { document.querySelectorAll('[id^="view-"]').forEach(v => v.classList.add('hidden')); document.getElementById(`view-${p}`).classList.remove('hidden'); document.querySelectorAll('.nav-item').forEach(n => { n.classList.remove('bg-brand-50','text-brand-600'); n.classList.add('text-slate-500'); }); document.getElementById(`nav-${p}`).classList.add('bg-brand-50','text-brand-600'); document.getElementById('page-title').innerText = p.charAt(0).toUpperCase() + p.slice(1); document.getElementById('sidebar').classList.add('-translate-x-full'); document.getElementById('mobile-overlay').classList.add('hidden'); } };
         const Settings = { save(k,v) { State.settings[k]=v; document.getElementById(`val-${k}`).innerText = v; } };
+
+        // Init: Load History & Stats
+        State.processedCount = localStorage.getItem('nexus_total_sent') || 0;
+        document.getElementById('stat-sent').innerText = State.processedCount;
+        Database.renderHistory();
 
         Session.renderBtn(); Database.render(); Session.check(); Settings.save('batch', 20); Settings.save('cool', 60);
     </script>
