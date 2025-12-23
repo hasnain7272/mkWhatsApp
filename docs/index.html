@@ -22,7 +22,6 @@
     <style>
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none;  scrollbar-width: none; }
-        /* Smooth fade for view switching */
         .fade-in { animation: fadeIn 0.3s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     </style>
@@ -46,7 +45,7 @@
         <div class="flex-1 p-4 overflow-y-auto space-y-6">
             <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
                 <div class="flex items-center justify-between mb-3">
-                    <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Session</span>
+                    <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Session Manager</span>
                     <span id="conn-dot" class="w-2 h-2 rounded-full bg-slate-300 transition-colors duration-300"></span>
                 </div>
                 <div class="grid grid-cols-2 gap-2 mb-3">
@@ -67,8 +66,8 @@
         
         <div class="p-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
             <div class="flex justify-between items-center mb-2">
-                <span class="text-[10px] font-bold text-slate-500 uppercase">System Idle</span>
-                <span id="queue-mini" class="text-[10px] font-bold text-brand-600">Q: 0</span>
+                <span class="text-[10px] font-bold text-slate-500 uppercase">Engine Status</span>
+                <span id="queue-mini" class="text-[10px] font-bold text-brand-600">IDLE</span>
             </div>
             <div class="w-full bg-slate-200 h-1 rounded-full overflow-hidden">
                 <div id="global-progress" class="h-full bg-brand-600 w-0 transition-all duration-300"></div>
@@ -98,19 +97,36 @@
                 </div>
             </div>
 
+            <div id="modal-edit" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 fade-in">
+                <div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-100 flex flex-col h-[500px]">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="font-bold text-lg text-slate-800">Edit / Manual Entry</h3>
+                        <button onclick="Database.closeEdit()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    </div>
+                    <input type="hidden" id="edit-key-hidden">
+                    <div class="bg-brand-50 p-3 rounded-lg border border-brand-100 mb-3">
+                        <p class="text-[10px] font-bold text-brand-700 uppercase mb-1">Format Guide</p>
+                        <p class="text-[10px] text-brand-600 font-mono">1234567890 | John Doe</p>
+                        <p class="text-[10px] text-brand-600 font-mono">9876543210 | Jane Smith</p>
+                    </div>
+                    <textarea id="edit-area" class="flex-1 w-full bg-slate-50 border border-slate-200 rounded-lg p-4 text-xs font-mono outline-none focus:border-brand-500 resize-none mb-4" placeholder="Enter contacts here..."></textarea>
+                    <button onclick="Database.saveEdit()" class="w-full py-2.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 transition-colors">Save Changes</button>
+                </div>
+            </div>
+
             <div id="view-dashboard" class="max-w-6xl mx-auto space-y-6 fade-in">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                        <div class="flex items-center gap-3 mb-2"><i data-lucide="users" class="w-4 h-4 text-brand-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Contacts</span></div>
+                        <div class="flex items-center gap-3 mb-2"><i data-lucide="users" class="w-4 h-4 text-brand-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Loaded Contacts</span></div>
                         <p id="stat-contacts" class="text-3xl font-bold text-slate-800 tracking-tight">0</p>
                     </div>
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                        <div class="flex items-center gap-3 mb-2"><i data-lucide="send" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Sent</span></div>
+                        <div class="flex items-center gap-3 mb-2"><i data-lucide="send" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Success Sent</span></div>
                         <p id="stat-sent" class="text-3xl font-bold text-slate-800 tracking-tight">0</p>
                     </div>
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                        <div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Mode</span></div>
-                        <p class="text-3xl font-bold text-slate-800 tracking-tight">Safe</p>
+                        <div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Safety Mode</span></div>
+                        <p class="text-3xl font-bold text-slate-800 tracking-tight">Active</p>
                     </div>
                 </div>
             </div>
@@ -119,12 +135,12 @@
                 <div class="w-full md:w-[400px] flex flex-col gap-4 shrink-0">
                     <div class="bg-white border border-slate-200 p-5 rounded-xl shadow-sm flex-1 flex flex-col">
                         <div class="flex justify-between items-center mb-4">
-                            <h3 class="font-bold text-slate-700 text-sm">Target List</h3>
+                            <h3 class="font-bold text-slate-700 text-sm">Target Audience</h3>
                             <select id="camp-list-selector" onchange="Database.loadListToCamp(this.value)" class="text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1.5 outline-none font-medium text-slate-600 focus:border-brand-500">
-                                <option value="">Select List...</option>
+                                <option value="">Load List (Extracts #)</option>
                             </select>
                         </div>
-                        <textarea id="camp-input" class="flex-1 w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-mono outline-none focus:border-brand-500 focus:bg-white resize-none mb-4 transition-all" placeholder="Paste numbers (one per line)..."></textarea>
+                        <textarea id="camp-input" class="flex-1 w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-mono outline-none focus:border-brand-500 focus:bg-white resize-none mb-4 transition-all" placeholder="Numbers will appear here..."></textarea>
                         
                         <div class="space-y-3">
                             <input id="camp-msg" type="text" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs outline-none focus:border-brand-500 focus:bg-white transition-all" placeholder="Type message...">
@@ -167,30 +183,33 @@
                                 <i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-slate-400"></i>
                                 <input type="text" id="contact-search" onkeyup="ContactManager.filter()" placeholder="Search..." class="pl-9 w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500 focus:bg-white transition-all">
                             </div>
-                            <button onclick="ContactManager.sync()" id="btn-sync" class="px-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg" title="Sync"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+                            <button onclick="ContactManager.sync()" id="btn-sync" class="px-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg" title="Sync from current Session"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
                         </div>
                         <div class="px-4 py-2 bg-slate-50/80 border-b border-slate-100 flex justify-between shrink-0">
-                            <span class="text-[10px] font-bold text-slate-400 uppercase">Total: <span id="count-all">0</span></span>
+                            <span class="text-[10px] font-bold text-slate-400 uppercase">Global Memory: <span id="count-all">0</span></span>
                             <span class="text-[10px] font-bold text-brand-600 uppercase">Selected: <span id="sel-count">0</span></span>
                         </div>
                         <div id="contact-list-container" class="flex-1 overflow-y-auto p-2 space-y-1">
-                            <div class="text-center mt-20 text-slate-400 text-xs">Sync to load contacts.</div>
+                            <div class="text-center mt-20 text-slate-400 text-xs">Sync contacts from any session to build your Global Memory.</div>
                         </div>
                     </div>
 
                     <div id="cont-panel-tools" class="hidden md:flex flex-col gap-4 w-full md:w-[320px] shrink-0 h-full overflow-y-auto">
                         
                         <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm shrink-0">
-                            <h3 class="font-bold text-slate-700 text-sm mb-3">Create List</h3>
+                            <h3 class="font-bold text-slate-700 text-sm mb-3">Create List (Saves Name + No.)</h3>
                             <input type="text" id="new-list-name" placeholder="List Name..." class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500 mb-2">
                             <div class="grid grid-cols-2 gap-2">
-                                <button onclick="ContactManager.saveSelection()" class="py-2 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700">Save</button>
+                                <button onclick="ContactManager.saveSelection()" class="py-2 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700">Save Selection</button>
                                 <button onclick="ContactManager.clearSelection()" class="py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50">Clear</button>
                             </div>
                         </div>
 
                         <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[200px]">
-                            <h3 class="font-bold text-slate-700 text-sm mb-3">Saved Lists</h3>
+                            <div class="flex justify-between items-center mb-3">
+                                <h3 class="font-bold text-slate-700 text-sm">Saved Lists</h3>
+                                <button onclick="Database.createNewEmpty()" class="text-[10px] font-bold text-brand-600 bg-brand-50 px-2 py-1 rounded hover:bg-brand-100">+ Manual List</button>
+                            </div>
                             <div id="contact-grid" class="flex-1 overflow-y-auto space-y-2 pr-1"></div>
                         </div>
 
@@ -230,7 +249,7 @@
     <script>
         lucide.createIcons();
 
-        // UI Helpers
+        // --- UI HELPERS ---
         const UI = {
             toggleSidebar() {
                 document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -305,12 +324,12 @@
                 const btn = document.getElementById('btn-sync'); btn.innerHTML = "...";
                 const res = await Session.api(`contacts/${State.user}`);
                 if(res && res.contacts) {
-                    // Merge
+                    // GLOBAL MERGE LOGIC (Does not clear previous list)
                     const existing = new Set(State.allContacts.map(c => c.number));
                     res.contacts.forEach(c => { if(!existing.has(c.number)) State.allContacts.push(c); });
                     State.allContacts.sort((a,b) => (a.name||'').localeCompare(b.name||''));
                     this.renderList(State.allContacts.slice(0, 100));
-                    Utils.toast(`Synced. Total: ${State.allContacts.length}`, "success");
+                    Utils.toast(`Synced! Global Memory: ${State.allContacts.length}`, "success");
                 }
                 btn.innerHTML = `<i data-lucide="refresh-cw" class="w-4 h-4"></i>`; lucide.createIcons();
             },
@@ -320,7 +339,7 @@
                 list.forEach(c => {
                     const isSel = State.selection.has(c.number);
                     const el = document.createElement('div');
-                    // FIX: No text-white. Using background color for state.
+                    // Render UI: Text is always dark (slate-700), bg changes on select.
                     el.className = `flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-all border mb-1 ${isSel ? 'bg-brand-50 border-brand-500' : 'bg-white border-transparent hover:bg-slate-50'}`;
                     el.onclick = () => this.toggle(c.number, el);
                     el.innerHTML = `
@@ -341,26 +360,16 @@
             toggle(num, el) {
                 if(State.selection.has(num)) State.selection.delete(num); else State.selection.add(num);
                 const isSel = State.selection.has(num);
-                // FIX: Class toggling without removing base classes
+                // Simple Toggle Logic for Styles
                 if(isSel) {
-                    el.classList.remove('bg-white', 'border-transparent', 'hover:bg-slate-50');
-                    el.classList.add('bg-brand-50', 'border-brand-500');
-                    // Update icon bg
-                    el.children[0].children[0].classList.remove('bg-slate-100', 'text-slate-500');
-                    el.children[0].children[0].classList.add('bg-brand-200', 'text-brand-700');
-                    // Update check
-                    el.children[1].classList.remove('border-slate-300');
-                    el.children[1].classList.add('bg-brand-600', 'border-brand-600', 'text-white');
+                    el.className = 'flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-all border mb-1 bg-brand-50 border-brand-500';
+                    el.children[0].children[0].className = 'w-8 h-8 rounded-full bg-brand-200 text-brand-700 flex items-center justify-center text-xs font-bold shrink-0';
+                    el.children[1].className = 'pointer-events-none w-4 h-4 rounded-full border bg-brand-600 border-brand-600 text-white flex items-center justify-center text-[10px]';
                     el.children[1].innerText = '✓';
                 } else {
-                    el.classList.add('bg-white', 'border-transparent', 'hover:bg-slate-50');
-                    el.classList.remove('bg-brand-50', 'border-brand-500');
-                    // Update icon bg
-                    el.children[0].children[0].classList.add('bg-slate-100', 'text-slate-500');
-                    el.children[0].children[0].classList.remove('bg-brand-200', 'text-brand-700');
-                    // Update check
-                    el.children[1].classList.add('border-slate-300');
-                    el.children[1].classList.remove('bg-brand-600', 'border-brand-600', 'text-white');
+                    el.className = 'flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-all border mb-1 bg-white border-transparent hover:bg-slate-50';
+                    el.children[0].children[0].className = 'w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center text-xs font-bold shrink-0';
+                    el.children[1].className = 'pointer-events-none w-4 h-4 rounded-full border border-slate-300 flex items-center justify-center text-[10px]';
                     el.children[1].innerText = '';
                 }
                 document.getElementById('sel-count').innerText = State.selection.size;
@@ -373,13 +382,23 @@
             saveSelection() {
                 const name = document.getElementById('new-list-name').value;
                 if(!name || !State.selection.size) return Utils.toast("Invalid input", "error");
-                localStorage.setItem(`nexus_list_${name}`, Array.from(State.selection).join('\n'));
-                Utils.toast("Saved", "success"); this.clearSelection(); Database.render();
+                
+                // SAVE AS JSON (Name + Number)
+                const listData = [];
+                // Look up details from global memory for selected numbers
+                State.allContacts.forEach(c => {
+                    if(State.selection.has(c.number)) listData.push({name: c.name || "Manual", number: c.number});
+                });
+                
+                localStorage.setItem(`nexus_list_${name}`, JSON.stringify(listData));
+                Utils.toast("Saved (Name + No.)", "success"); 
+                this.clearSelection(); 
+                Database.render();
             },
             clearSelection() {
                 State.selection.clear(); document.getElementById('sel-count').innerText = 0;
                 document.getElementById('new-list-name').value = '';
-                this.filter(); // Refresh view to clear highlights
+                this.filter(); 
             }
         };
 
@@ -387,26 +406,30 @@
             render() {
                 const grid = document.getElementById('contact-grid');
                 const sel = document.getElementById('camp-list-selector');
-                grid.innerHTML = ''; sel.innerHTML = '<option value="">Select List...</option>';
+                grid.innerHTML = ''; sel.innerHTML = '<option value="">Load List (Extracts #)</option>';
                 
                 Object.keys(localStorage).forEach(k => {
                     if(k.startsWith('nexus_list_')) {
                         const name = k.replace('nexus_list_', '');
-                        const count = localStorage.getItem(k).split('\n').length;
+                        let count = 0;
+                        try {
+                            const data = JSON.parse(localStorage.getItem(k));
+                            count = data.length;
+                        } catch(e) { count = "Err"; } // Legacy support
                         
-                        // Render Card
+                        // Card
                         const div = document.createElement('div');
                         div.className = "flex justify-between items-center p-3 bg-slate-50 border border-slate-200 rounded-lg hover:border-slate-300 transition-colors";
                         div.innerHTML = `
                             <div><p class="text-xs font-bold text-slate-700">${name}</p><p class="text-[10px] text-slate-400">${count} items</p></div>
                             <div class="flex gap-1">
-                                <button onclick="Database.load('${k}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-brand-600"><i data-lucide="upload" class="w-3 h-3"></i></button>
+                                <button onclick="Database.openEdit('${k}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-blue-600"><i data-lucide="pencil" class="w-3 h-3"></i></button>
                                 <button onclick="Database.del('${k}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-red-500"><i data-lucide="trash" class="w-3 h-3"></i></button>
                             </div>
                         `;
                         grid.appendChild(div);
 
-                        // Render Option
+                        // Option
                         const opt = document.createElement('option'); opt.value = k; opt.innerText = `${name} (${count})`;
                         sel.appendChild(opt);
                     }
@@ -414,14 +437,67 @@
                 lucide.createIcons();
             },
             del(k) { if(confirm("Delete?")) { localStorage.removeItem(k); this.render(); } },
-            load(k) { 
-                const nums = localStorage.getItem(k).split('\n');
-                nums.forEach(n => State.selection.add(n));
-                document.getElementById('sel-count').innerText = State.selection.size;
-                Utils.toast(`Loaded ${nums.length} contacts`, "success");
-                ContactManager.filter(); // Refresh UI
+            
+            // NEW: Edit Logic (Manual Entry)
+            createNewEmpty() { this.openEdit(''); },
+            openEdit(k) {
+                const modal = document.getElementById('modal-edit');
+                const area = document.getElementById('edit-area');
+                document.getElementById('edit-key-hidden').value = k;
+                
+                if(k && localStorage.getItem(k)) {
+                    // Convert JSON to "Number | Name" format
+                    try {
+                        const data = JSON.parse(localStorage.getItem(k));
+                        area.value = data.map(i => `${i.number} | ${i.name}`).join('\n');
+                    } catch(e) { area.value = ""; }
+                } else {
+                    area.value = ""; // New list
+                    document.getElementById('edit-key-hidden').value = "NEW";
+                }
+                modal.classList.remove('hidden');
             },
-            loadListToCamp(k) { if(k) document.getElementById('camp-input').value = localStorage.getItem(k); }
+            closeEdit() { document.getElementById('modal-edit').classList.add('hidden'); },
+            saveEdit() {
+                const keyInput = document.getElementById('edit-key-hidden').value;
+                const raw = document.getElementById('edit-area').value;
+                let key = keyInput;
+                
+                if(key === "NEW") {
+                    const name = prompt("Enter List Name:");
+                    if(!name) return;
+                    key = `nexus_list_${name}`;
+                }
+
+                // Convert "Number | Name" back to JSON
+                const lines = raw.split('\n');
+                const newData = [];
+                lines.forEach(line => {
+                    if(line.trim()) {
+                        const parts = line.split('|');
+                        const num = parts[0].trim();
+                        const name = parts[1] ? parts[1].trim() : "Manual Entry";
+                        if(num) newData.push({ name: name, number: num });
+                    }
+                });
+
+                localStorage.setItem(key, JSON.stringify(newData));
+                Utils.toast("Saved Manual List", "success");
+                this.closeEdit();
+                this.render();
+            },
+
+            // Extract ONLY Numbers for Campaign
+            loadListToCamp(k) { 
+                if(k) {
+                    try {
+                        const data = JSON.parse(localStorage.getItem(k));
+                        // Map only numbers
+                        document.getElementById('camp-input').value = data.map(i => i.number).join('\n');
+                        Utils.toast(`Loaded ${data.length} Numbers`, "success");
+                    } catch(e) { Utils.toast("Error loading list", "error"); }
+                } 
+            }
         };
 
         const Import = {
@@ -439,7 +515,9 @@
                 const id = document.getElementById('group-selector').value;
                 const res = await Session.api(`get-members?id=${State.user}&groupJid=${encodeURIComponent(id)}`);
                 if(res) {
-                    localStorage.setItem(`nexus_list_Imp_${Date.now()}`, res.members.map(m=>m.number).join('\n'));
+                    // Save as JSON
+                    const listName = `nexus_list_Imp_${Date.now()}`;
+                    localStorage.setItem(listName, JSON.stringify(res.members)); // assumes API returns {name, number}
                     Utils.toast(`Imported ${res.count}`, "success"); Database.render();
                 }
             }
