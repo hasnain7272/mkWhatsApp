@@ -11,6 +11,7 @@ const express = require('express');
 const cors = require('cors'); // <--- NEW: Allows Frontend access
 const { MongoClient } = require('mongodb');
 const { useMongoDBAuthState } = require('mongo-baileys');
+const path = require('path');
 
 const app = express();
 // Use Render's port or default to 3001 (to avoid conflict with React's 3000)
@@ -22,6 +23,11 @@ const MONGO_URL = process.env.MONGO_URL || "mongodb+srv://YOUR_MONGO_URL_HERE";
 
 app.use(cors()); // Allow all connections (Great for testing)
 app.use(express.json({ limit: '60mb' }));
+
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // Global Map to hold active sessions
 const sessions = {}; 
