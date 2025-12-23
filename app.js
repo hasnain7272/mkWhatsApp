@@ -2,67 +2,181 @@ const {
     default: makeWASocket, 
     fetchLatestBaileysVersion, 
     makeCacheableSignalKeyStore,
-    DisconnectReason
+    DisconnectReason,
+    Browsers
 } = require('@whiskeysockets/baileys');
 
 const pino = require('pino');
+const express = require('express');
+const cors = require('cors'); // <--- NEW: Allows Frontend access
 const { MongoClient } = require('mongodb');
 const { useMongoDBAuthState } = require('mongo-baileys');
-const http = require('http');
 
-// 1. SETUP: Put your connection string here
-// In a real project, use process.env.MONGO_URL for security
-const MONGO_URL = "mongodb+srv://mkWhatsApp:mkWhatsApp@mkwhatsapp.d2flbbr.mongodb.net/?appName=mkWhatsApp";
+const app = express();
+// Use Render's port or default to 3001 (to avoid conflict with React's 3000)
+const PORT = process.env.PORT || 3001; 
 
-async function startWhatsApp() {
-    // 2. CONNECT TO DATABASE
-    const mongo = new MongoClient(MONGO_URL, { socketTimeoutMS: 100000 });
-    await mongo.connect();
-    
-    // This creates a collection called 'auth_info' in your DB
-    const collection = mongo.db("whatsapp_bot").collection("auth_info");
+// --- CONFIGURATION ---
+// Add this URL in your Render "Environment Variables" settings as MONGO_URL
+const MONGO_URL = process.env.MONGO_URL || "mongodb+srv://YOUR_MONGO_URL_HERE"; 
 
-    // 3. LOAD SESSION FROM DB
-    const { state, saveCreds } = await useMongoDBAuthState(collection);
-    const { version } = await fetchLatestBaileysVersion();
+app.use(cors()); // Allow all connections (Great for testing)
+app.use(express.json({ limit: '60mb' }));
 
-    const sock = makeWASocket({
-        version,
-        logger: pino({ level: 'silent' }),
-        printQRInTerminal: true,
-        auth: {
-            creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" })),
-        }
-    });
+// Global Map to hold active sessions
+const sessions = {}; 
 
-    sock.ev.on('creds.update', saveCreds);
+// --- 🧠 IN-MEMORY STORE (RAM) ---
+// We use RAM for contacts/chats on Cloud (faster & cheaper than writing to disk repeatedly)
+function makeInMemoryStore(id) {
+    let state = { contacts: {}, chats: {} };
 
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-        if(connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            if(shouldReconnect) startWhatsApp();
-        } else if(connection === 'open') {
-            console.log('✅ Connected! Session is saved to MongoDB.');
-        }
-    });
+    return {
+        get contacts() { return state.contacts; },
+        get chats() { return state.chats; },
+        bind: (ev) => {
+            ev.on('messaging-history.set', ({ contacts, chats }) => {
+                contacts.forEach(c => state.contacts[c.id] = Object.assign(state.contacts[c.id] || {}, c));
+                chats.forEach(c => state.chats[c.id] = Object.assign(state.chats[c.id] || {}, c));
+                console.log(`[${id}] 📥 Synced ${contacts.length} contacts.`);
+            });
 
-    // Simple Test Command
-    sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type === 'notify') {
-            const msg = messages[0];
-            if (!msg.message) return;
-            const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+            ev.on('contacts.upsert', (contacts) => {
+                contacts.forEach(c => state.contacts[c.id] = Object.assign(state.contacts[c.id] || {}, c));
+            });
             
-            if (text === '!ping') {
-                await sock.sendMessage(msg.key.remoteJid, { text: 'Pong! 🏓' });
-            }
-        }
-    });
+            ev.on('contacts.update', (updates) => {
+                updates.forEach(u => {
+                    if(state.contacts[u.id]) Object.assign(state.contacts[u.id], u);
+                });
+            });
+        },
+        loadMessage: async () => undefined
+    };
 }
 
-// 4. KEEP ALIVE (For Render/Koyeb)
-http.createServer((req, res) => res.end('Bot is Alive')).listen(process.env.PORT || 8080);
+// --- ⚙️ SESSION ENGINE ---
+async function createSession(id) {
+    try {
+        console.log(`[${id}] Starting session...`);
+        
+        // 1. Connect to MongoDB (The "Vault")
+        const mongo = new MongoClient(MONGO_URL);
+        await mongo.connect();
+        const collection = mongo.db("whatsapp_bot").collection(`auth_${id}`);
 
-startWhatsApp();
+        // 2. Load Auth State from DB
+        const { state, saveCreds } = await useMongoDBAuthState(collection);
+        const { version } = await fetchLatestBaileysVersion();
+        
+        // 3. Create Store (In-Memory)
+        const store = makeInMemoryStore(id);
+
+        // 4. Create Socket
+        const sock = makeWASocket({
+            version,
+            logger: pino({ level: 'silent' }),
+            printQRInTerminal: true, // Useful for logs
+            browser: Browsers.macOS("Chrome"),
+            auth: {
+                creds: state.creds,
+                keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" })),
+            },
+            generateHighQualityLinkPreview: true,
+            syncFullHistory: false, // Turn off to save RAM on free tier
+        });
+
+        // Bind Store
+        store.bind(sock.ev);
+
+        // Initialize Session Data
+        sessions[id] = { sock, store, status: 'INITIALIZING', qr: null };
+
+        // 5. Handle Events
+        sock.ev.on('creds.update', saveCreds);
+
+        sock.ev.on('connection.update', (update) => {
+            const { connection, lastDisconnect, qr } = update;
+
+            // Update QR for Frontend
+            if (qr) {
+                console.log(`[${id}] QR GENERATED`);
+                sessions[id].qr = qr;
+                sessions[id].status = 'QR_READY';
+            }
+
+            if (connection === 'open') {
+                console.log(`[${id}] 🟢 ONLINE`);
+                sessions[id].status = 'READY';
+                sessions[id].qr = null; 
+            }
+
+            if (connection === 'close') {
+                const code = (lastDisconnect?.error)?.output?.statusCode;
+                const shouldReconnect = code !== DisconnectReason.loggedOut;
+                console.log(`[${id}] 🔴 Connection closed (${code}). Reconnecting: ${shouldReconnect}`);
+                
+                if (shouldReconnect) {
+                    createSession(id); 
+                } else {
+                    delete sessions[id]; // Clear session if logged out
+                }
+            }
+        });
+
+    } catch (err) {
+        console.error(`[${id}] Failed to create session:`, err);
+    }
+}
+
+// --- 🔌 API ENDPOINTS ---
+
+// 1. Start Session
+app.post('/api/start', (req, res) => { 
+    const { id } = req.body;
+    if (!sessions[id]) createSession(id);
+    res.json({ success: true, message: "Session starting..." }); 
+});
+
+// 2. Get Status & QR (Frontend Polls This)
+app.get('/api/status/:id', (req, res) => { 
+    const s = sessions[req.params.id];
+    if (!s) return res.json({ status: 'OFFLINE', qr: null });
+    res.json({ status: s.status, qr: s.qr }); 
+});
+
+// 3. Logout
+app.post('/api/logout', async (req, res) => { 
+    const { id } = req.body;
+    if (sessions[id]) {
+        try { await sessions[id].sock.logout(); } catch(e){}
+        delete sessions[id];
+        // Note: In Mongo, you might want to drop the collection here to fully clear data
+    }
+    res.json({ success: true }); 
+});
+
+// 4. Send Message
+app.post('/api/send', async (req, res) => {
+    const { id, number, message } = req.body;
+    if (!sessions[id] || sessions[id].status !== 'READY') {
+        return res.status(400).json({ error: "Session offline or not ready" });
+    }
+    try {
+        const jid = number + "@s.whatsapp.net";
+        await sessions[id].sock.sendMessage(jid, { text: message });
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 5. Get Contacts
+app.get('/api/contacts/:id', (req, res) => {
+    if (!sessions[req.params.id]) return res.json({ count: 0, contacts: [] });
+    const contacts = Object.values(sessions[req.params.id].store.contacts)
+        .filter(c => c.name || c.notify)
+        .map(c => ({ name: c.name || c.notify, number: c.id.split('@')[0] }));
+    res.json({ success: true, count: contacts.length, contacts });
+});
+
+// Start Server
+app.listen(PORT, () => console.log(`🚀 Server running on Port ${PORT}`));
