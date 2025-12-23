@@ -282,8 +282,9 @@
             }
         };
 
+        const API_BASE = "https://mkwhatsapp.onrender.com";
         const Session = {
-            async api(path, body) { try { const res = await fetch(`/api/${path}`, body ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)} : {}); return res.ok ? res.json() : null; } catch { return null; } },
+            async api(path, body) { try { const res = await fetch(`${API_BASE}/api/${path}`, body ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)} : {}); return res.ok ? res.json() : null; } catch { return null; } },
             switch(id) { 
                 if (State.user !== id) { 
                     State.user = id; 
