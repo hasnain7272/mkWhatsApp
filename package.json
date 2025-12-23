@@ -11,6 +11,7 @@
   "description": "",
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "cors": "^2.8.5",
     "mongo-baileys": "^1.0.1",
     "mongodb": "^7.0.0",
     "pino": "^10.1.0",
