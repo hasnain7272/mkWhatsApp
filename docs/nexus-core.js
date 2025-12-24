@@ -1,6 +1,7 @@
+
 /**
- * NEXUS CORE v3.0 | Database-Driven Engine
- * Persists state to Supabase for crash recovery.
+ * NEXUS CORE v3.1 | DB-Driven Engine (Low RAM)
+ * Features: Base64 Media Storage, Row-by-Row Processing
  */
 
 const CONFIG = {
@@ -14,7 +15,7 @@ const { createClient } = supabase;
 const db = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
 
 const DataStore = {
-    // --- LIST MANAGEMENT (Keep existing) ---
+    // --- LISTS ---
     async getLists() {
         const { data } = await db.from('lists').select('id, name, contacts').order('created_at', { ascending: false });
         return (data || []).map(i => ({ id: i.id, name: i.name, count: i.contacts ? i.contacts.length : 0 }));
@@ -30,21 +31,31 @@ const DataStore = {
     },
     async deleteList(id) { await db.from('lists').delete().eq('id', id); },
 
-    // --- NEW: CAMPAIGN MANAGEMENT ---
+    // --- CAMPAIGNS (The Heavy Lifters) ---
     
-    // 1. Create New Campaign (Offload RAM to DB)
-    async createCampaign(name, message, contactList) {
-        // A. Create Campaign Record
+    // 1. Create Campaign (Stores Media in DB)
+    async createCampaign(name, message, contactList, mediaFile) {
+        // Prepare Media
+        let mediaData = null, mediaMime = null;
+        if(mediaFile) {
+            mediaData = mediaFile.data; // Base64 string from CoreUtils
+            mediaMime = mediaFile.mimetype;
+        }
+
+        // A. Insert Campaign Metadata
         const { data: camp, error } = await db.from('campaigns').insert([{
             name: name,
             message: message,
             total_count: contactList.length,
-            status: 'ready'
+            status: 'ready',
+            media_data: mediaData,
+            media_mime: mediaMime
         }]).select().single();
         
-        if(error) return null;
+        if(error) { console.error(error); return null; }
 
-        // B. Bulk Insert Queue Items (Efficiently)
+        // B. Bulk Insert Queue (1000 at a time to prevent timeouts)
+        // We only store Name/Number. Media is referenced in Parent Campaign.
         const queueItems = contactList.map(c => ({
             campaign_id: camp.id,
             number: c.number,
@@ -52,7 +63,6 @@ const DataStore = {
             status: 'pending'
         }));
 
-        // Insert in chunks of 1000 to prevent timeouts
         const chunkSize = 1000;
         for (let i = 0; i < queueItems.length; i += chunkSize) {
             await db.from('queue').insert(queueItems.slice(i, i + chunkSize));
@@ -61,37 +71,39 @@ const DataStore = {
         return camp.id;
     },
 
-    // 2. Fetch Recent Campaigns
     async getCampaigns() {
-        const { data } = await db.from('campaigns').select('*').order('created_at', { ascending: false }).limit(20);
+        const { data } = await db.from('campaigns').select('id, name, status, sent_count, total_count, failed_count, created_at').order('created_at', { ascending: false }).limit(20);
         return data || [];
     },
 
-    // 3. Get Next Batch (The "Fetcher")
-    async getPendingBatch(campaignId, size) {
+    // 2. Fetch Single Campaign Details (For Resume)
+    async getCampaignDetails(id) {
+        const { data } = await db.from('campaigns').select('*').eq('id', id).single();
+        return data;
+    },
+
+    // 3. ATOMIC PROCESSOR: Fetch 1 Pending Item
+    async fetchNextJob(campaignId) {
         const { data } = await db.from('queue')
             .select('*')
             .eq('campaign_id', campaignId)
             .eq('status', 'pending')
-            .limit(size);
-        return data || [];
+            .limit(1) // Low RAM: One at a time
+            .maybeSingle();
+        return data;
     },
 
-    // 4. Update Status (The "Marker")
-    async markSent(ids, status = 'sent') {
-        if(ids.length === 0) return;
-        await db.from('queue').update({ status: status, updated_at: new Date() }).in('id', ids);
+    // 4. Update Job Status
+    async completeJob(id, status) {
+        await db.from('queue').update({ status: status, updated_at: new Date() }).eq('id', id);
     },
 
-    // 5. Update Campaign Stats
-    async updateCampaignStats(id, sent, failed) {
-        // Increment atomic counters (simplified for client-side)
-        // Note: For perfect accuracy we would use an RPC function, but this works for MVP
-        const { data } = await db.from('campaigns').select('sent_count, failed_count').eq('id', id).single();
-        await db.from('campaigns').update({ 
-            sent_count: data.sent_count + sent, 
-            failed_count: data.failed_count + failed 
-        }).eq('id', id);
+    // 5. Update Stats
+    async updateStats(campId, isSuccess) {
+        // In production, use RPC. Here, simple increment.
+        const { data } = await db.from('campaigns').select('sent_count, failed_count').eq('id', campId).single();
+        const update = isSuccess ? { sent_count: data.sent_count + 1 } : { failed_count: data.failed_count + 1 };
+        await db.from('campaigns').update(update).eq('id', campId);
     }
 };
 
@@ -115,16 +127,6 @@ const CoreUtils = {
             const reader = new FileReader();
             reader.readAsDataURL(file);
             reader.onload = () => resolve({ mimetype: file.type, data: reader.result.split(',')[1], filename: file.name });
-        });
-    },
-    exportCSV(name, dataPromise) {
-        Promise.resolve(dataPromise).then(result => {
-            const data = result.contacts || result; 
-            const csvContent = "data:text/csv;charset=utf-8," + "Name,Number\n" + data.map(e => `${e.name},${e.number}`).join("\n");
-            const link = document.createElement("a");
-            link.setAttribute("href", encodeURI(csvContent));
-            link.setAttribute("download", `${name}.csv`);
-            document.body.appendChild(link); link.click(); document.body.removeChild(link);
         });
     }
 };
