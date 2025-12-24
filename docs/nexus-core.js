@@ -1,6 +1,5 @@
 /**
- * NEXUS CORE v4.1 | Streamlined Logic
- * Focus: Campaign as Templates, Clean Deletion, Low RAM
+ * NEXUS CORE v4.2 | Logic Layer
  */
 
 const CONFIG = {
@@ -31,8 +30,6 @@ const DataStore = {
     async deleteList(id) { await db.from('lists').delete().eq('id', id); },
 
     // --- CAMPAIGNS ---
-    
-    // 1. Create
     async createCampaign(name, message, contactList, mediaFile) {
         let mediaData = null, mediaMime = null;
         if(mediaFile) { mediaData = mediaFile.data; mediaMime = mediaFile.mimetype; }
@@ -45,32 +42,28 @@ const DataStore = {
         if(error) return null;
 
         const queueItems = contactList.map(c => ({ campaign_id: camp.id, number: c.number, name: c.name, status: 'pending' }));
-        // Bulk insert in chunks
+        // Bulk Insert Chunking
         for (let i = 0; i < queueItems.length; i += 1000) {
             await db.from('queue').insert(queueItems.slice(i, i + 1000));
         }
         return camp.id;
     },
 
-    // 2. Manage
     async getCampaigns() {
         const { data } = await db.from('campaigns').select('id, name, status, sent_count, failed_count, total_count, created_at').order('created_at', { ascending: false });
         return data || [];
     },
     
-    // Fetch full data (including media) for Reuse/Template loading
     async getCampaignDetails(id) {
         const { data } = await db.from('campaigns').select('*').eq('id', id).single();
         return data;
     },
 
     async deleteCampaign(id) {
-        // Cascade delete will handle queue if set up in SQL, but explicit delete is safe
         await db.from('queue').delete().eq('campaign_id', id);
         await db.from('campaigns').delete().eq('id', id);
     },
 
-    // 3. Execution
     async fetchNextJob(campaignId) {
         const { data } = await db.from('queue').select('*').eq('campaign_id', campaignId).eq('status', 'pending').limit(1).maybeSingle();
         return data;
