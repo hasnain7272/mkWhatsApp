@@ -3,16 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Nexus OS | Cloud Engine</title>
+    <title>Nexus OS | Enterprise SaaS</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script> 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="nexus-core.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="nexus-core.js"></script> <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
-        tailwind.config = { theme: { fontFamily: { sans: ['Inter', 'sans-serif'] }, extend: { colors: { brand: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' } } } } }
+        tailwind.config = {
+            theme: { fontFamily: { sans: ['Inter', 'sans-serif'] }, extend: { colors: { brand: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' } } } }
+        }
     </script>
     <style>
         .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -25,6 +27,19 @@
 
     <div id="mobile-overlay" onclick="UI.toggleSidebar()" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 hidden md:hidden transition-opacity"></div>
     <div id="toasts" class="absolute bottom-6 right-6 flex flex-col gap-2 pointer-events-none z-[100]"></div>
+
+    <div id="modal-reuse" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 fade-in">
+        <div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-sm border border-slate-100">
+            <h3 class="font-bold text-lg text-slate-800 mb-2">Reuse Campaign</h3>
+            <p class="text-xs text-slate-500 mb-4">Select a list to target with this campaign template.</p>
+            <input type="hidden" id="reuse-id">
+            <select id="reuse-list-select" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs mb-4 outline-none"><option>Loading Lists...</option></select>
+            <div class="flex gap-2">
+                <button onclick="document.getElementById('modal-reuse').classList.add('hidden')" class="flex-1 py-2 bg-slate-100 text-slate-600 rounded-lg text-xs font-bold">Cancel</button>
+                <button onclick="Engine.confirmReuse()" class="flex-1 py-2 bg-brand-600 text-white rounded-lg text-xs font-bold">Launch Copy</button>
+            </div>
+        </div>
+    </div>
 
     <aside id="sidebar" class="fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 -translate-x-full md:translate-x-0 shadow-2xl md:shadow-none">
         <div class="h-16 flex items-center px-6 border-b border-slate-100 shrink-0">
@@ -66,24 +81,38 @@
 
             <div id="view-dashboard" class="max-w-6xl mx-auto space-y-6 fade-in">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><p class="text-xs font-bold text-slate-400 uppercase">Cloud Lists</p><p id="stat-stored" class="text-3xl font-bold text-slate-800">0</p></div>
-                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><p class="text-xs font-bold text-slate-400 uppercase">Sent</p><p id="stat-sent" class="text-3xl font-bold text-slate-800">0</p></div>
-                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><p class="text-xs font-bold text-slate-400 uppercase">System</p><p class="text-3xl font-bold text-emerald-600">Online</p></div>
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="database" class="w-4 h-4 text-brand-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Cloud Lists</span></div><p id="stat-stored" class="text-3xl font-bold text-slate-800 tracking-tight">0</p></div>
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="send" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Lifetime Sent</span></div><p id="stat-sent" class="text-3xl font-bold text-slate-800 tracking-tight">0</p></div>
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">System</span></div><p class="text-3xl font-bold text-slate-800 tracking-tight">Active</p></div>
+                </div>
+                
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                        <h3 class="font-bold text-sm text-slate-700">Recent Campaigns</h3>
+                        <button onclick="Engine.renderDashboardHistory()" class="text-xs text-brand-600 font-bold hover:underline">Refresh</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead><tr class="text-[10px] text-slate-400 uppercase border-b border-slate-100"><th class="px-6 py-3 font-bold">Name</th><th class="px-6 py-3 font-bold">Status</th><th class="px-6 py-3 font-bold">Progress</th><th class="px-6 py-3 font-bold text-right">Action</th></tr></thead>
+                            <tbody id="dash-history-body" class="text-xs text-slate-600"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
             <div id="view-campaigns" class="hidden h-full flex flex-col md:flex-row gap-6 fade-in">
-                <div class="w-full md:w-[400px] flex flex-col gap-4 shrink-0">
+                <div class="w-full md:w-[380px] flex flex-col gap-4 shrink-0">
                     <div class="bg-white border border-slate-200 p-5 rounded-xl shadow-sm flex-1 flex flex-col">
                         <h3 class="font-bold text-slate-800 text-sm mb-4">New Campaign</h3>
-                        <input id="camp-name" class="w-full border rounded-lg p-2 text-xs mb-3" placeholder="Campaign Name...">
-                        <select id="camp-list-selector" class="w-full border rounded-lg p-2 text-xs mb-3"><option value="">Select List</option></select>
+                        <input id="camp-name" class="w-full border rounded-lg p-2 text-xs mb-3" placeholder="Name...">
+                        <select id="camp-list-selector" class="w-full border rounded-lg p-2 text-xs mb-3"><option value="">Select Target List</option></select>
                         <textarea id="camp-msg" class="flex-1 border rounded-lg p-3 text-xs mb-3 resize-none" placeholder="Message..."></textarea>
-                        <div onclick="document.getElementById('camp-file').click()" class="border border-dashed rounded-lg p-3 flex justify-center gap-2 cursor-pointer mb-3"><i data-lucide="paperclip" class="w-4 h-4 text-slate-400"></i><span id="file-name" class="text-xs font-bold text-slate-500 truncate">Attach</span><input type="file" id="camp-file" class="hidden" onchange="Engine.handleFile(this)"></div>
-                        <button onclick="Engine.create()" class="w-full py-3 bg-slate-800 text-white rounded-xl font-bold shadow-lg hover:bg-slate-900 transition-all">Create in Cloud</button>
+                        <div onclick="document.getElementById('camp-file').click()" class="border border-dashed rounded-lg p-3 flex justify-center gap-2 cursor-pointer mb-3 hover:bg-slate-50"><i data-lucide="paperclip" class="w-4 h-4 text-slate-400"></i><span id="file-name" class="text-xs font-bold text-slate-500 truncate">Attach File</span><input type="file" id="camp-file" class="hidden" onchange="Engine.handleFile(this)"></div>
+                        <button onclick="Engine.create()" class="w-full py-3 bg-slate-800 text-white rounded-xl font-bold shadow-lg hover:bg-slate-900 transition-all">Create & Queue</button>
                     </div>
                 </div>
-                <div class="flex-1 flex flex-col gap-4 h-[600px] md:h-auto">
+                
+                <div class="flex-1 flex flex-col gap-4 overflow-hidden h-[600px] md:h-auto">
                     <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
                         <div class="flex justify-between items-center mb-2">
                             <div><h3 class="font-bold text-sm" id="active-camp-name">No Active Campaign</h3><p class="text-[10px] text-slate-400" id="active-camp-stats">Waiting...</p></div>
@@ -91,10 +120,16 @@
                         </div>
                         <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden"><div id="camp-progress" class="h-full bg-emerald-500 w-0 transition-all"></div></div>
                     </div>
-                    <div class="bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden flex-1 shadow-sm">
-                        <div class="h-10 border-b flex items-center px-4 bg-slate-50"><span class="text-xs font-bold text-slate-500 uppercase">History / Queue</span></div>
-                        <div id="campaign-list" class="flex-1 overflow-y-auto p-2 space-y-1"></div>
-                        <div id="console-logs" class="h-32 border-t p-2 overflow-y-auto font-mono text-[10px] bg-slate-900 text-green-400"></div>
+                    
+                    <div class="flex-1 flex flex-col md:flex-row gap-4 overflow-hidden">
+                        <div class="w-full md:w-1/3 bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden shadow-sm">
+                            <div class="h-10 border-b flex items-center px-4 bg-slate-50"><span class="text-xs font-bold text-slate-500 uppercase">Up Next</span></div>
+                            <div id="queue-preview" class="flex-1 p-2 space-y-1 overflow-y-auto text-[10px] text-slate-500"></div>
+                        </div>
+                        <div class="flex-1 bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden shadow-sm">
+                            <div class="h-10 border-b flex items-center px-4 bg-slate-50"><span class="text-xs font-bold text-slate-500 uppercase">Live Logs</span><button onclick="document.getElementById('console-logs').innerHTML=''" class="ml-auto text-[10px] text-slate-400 hover:text-red-500">Clear</button></div>
+                            <div id="console-logs" class="flex-1 p-4 overflow-y-auto font-mono text-[10px] bg-slate-900 text-green-400"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -166,7 +201,7 @@
             }
         };
 
-        const State = { user: 'client-1', status: 'OFFLINE', qr: null, activeCampId: null, activeFile: null, isRunning: false, settings: { batch: 20, cool: 60 }, allContacts: [], selection: new Set(), tempMemory: new Map() };
+        const State = { user: 'client-1', status: 'OFFLINE', qr: null, activeCampId: null, activeFile: null, isRunning: false, processedCount: 0, settings: { batch: 20, cool: 60 }, allContacts: [], selection: new Set(), tempMemory: new Map() };
         
         const Utils = {
             toast: (msg, type='info') => { const c = document.getElementById('toasts'), el = document.createElement('div'); el.className = `${type === 'success' ? 'bg-emerald-600' : 'bg-slate-800'} text-white px-4 py-3 rounded-lg shadow-xl text-xs font-bold animate-bounce`; el.innerText = msg; c.appendChild(el); setTimeout(() => el.remove(), 3000); }
@@ -193,7 +228,7 @@
                 }
             }
         };
-        setInterval(() => Session.check(), 5000);
+        setInterval(() => Session.check(), 5000); // Polling
 
         const ContactManager = {
             async sync() {
@@ -229,32 +264,26 @@
                 await DataStore.saveList(name, listData);
                 Utils.toast("Saved to Cloud", "success"); this.clearSelection(); Database.render();
             },
-            async loadToSelect(id) {
-                this.clearSelection();
-                const { name, contacts } = await DataStore.getListContent(id);
-                if(contacts) {
-                    contacts.forEach(i => { State.selection.add(i.number); State.tempMemory.set(i.number, i.name); });
-                    document.getElementById('sel-count').innerText = State.selection.size;
-                    document.getElementById('new-list-name').value = name;
-                    Utils.toast(`Loaded "${name}"`, "success");
-                    this.filter(); 
-                }
-            },
-            clearSelection() { State.selection.clear(); document.getElementById('sel-count').innerText = 0; document.getElementById('new-list-name').value = ''; this.filter(); }
+            clearSelection() { State.selection.clear(); document.getElementById('sel-count').innerText = 0; this.filter(); }
         };
 
         const Database = {
             async render() {
                 const grid = document.getElementById('contact-grid'); const sel = document.getElementById('camp-list-selector');
-                grid.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">Loading Cloud Lists...</div>'; sel.innerHTML = '<option value="">Load Cloud List</option>';
+                const reuseSel = document.getElementById('reuse-list-select'); // For Reuse Modal
+                grid.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">Loading...</div>'; 
+                sel.innerHTML = '<option value="">Load Cloud List</option>';
                 const lists = await DataStore.getLists();
                 grid.innerHTML = '';
+                if(reuseSel) reuseSel.innerHTML = '<option value="">Select Target List</option>';
+                
                 lists.forEach(l => {
                     const div = document.createElement('div');
                     div.className = "flex justify-between items-center p-3 bg-slate-50 border border-slate-200 rounded-lg hover:border-slate-300 transition-colors";
-                    div.innerHTML = `<div><p class="text-xs font-bold text-slate-700">${l.name}</p><p class="text-[10px] text-slate-400">${l.count} items</p></div><div class="flex gap-1"><button onclick="ContactManager.loadToSelect('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-brand-600" title="Select & Edit"><i data-lucide="check-square" class="w-3 h-3"></i></button><button onclick="Database.delete('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-red-500"><i data-lucide="trash" class="w-3 h-3"></i></button></div>`;
+                    div.innerHTML = `<div><p class="text-xs font-bold text-slate-700">${l.name}</p><p class="text-[10px] text-slate-400">${l.count} items</p></div><div class="flex gap-1"><button onclick="CoreUtils.exportCSV('${l.name}', DataStore.getListContent('${l.id}'))" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-green-600" title="Export CSV"><i data-lucide="download" class="w-3 h-3"></i></button><button onclick="ContactManager.loadToSelect('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-brand-600" title="Select & Edit"><i data-lucide="check-square" class="w-3 h-3"></i></button><button onclick="Database.openEdit('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-blue-600"><i data-lucide="pencil" class="w-3 h-3"></i></button><button onclick="Database.delete('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-red-500"><i data-lucide="trash" class="w-3 h-3"></i></button></div>`;
                     grid.appendChild(div);
                     const opt = document.createElement('option'); opt.value = l.id; opt.innerText = `${l.name} (${l.count})`; sel.appendChild(opt);
+                    if(reuseSel) { const ro = document.createElement('option'); ro.value = l.id; ro.innerText = l.name; reuseSel.appendChild(ro); }
                 });
                 document.getElementById('stat-stored').innerText = lists.length;
                 lucide.createIcons();
@@ -286,24 +315,20 @@
         const Engine = {
             handleFile(i) { if(i.files[0]) { document.getElementById('file-name').innerText = i.files[0].name; CoreUtils.processFile(i.files[0]).then(f => State.activeFile = f); } },
             
-            // 1. Create Campaign
+            // 1. Create DB Campaign
             async create() {
                 const name = document.getElementById('camp-name').value || `Campaign ${new Date().toLocaleTimeString()}`;
                 const msg = document.getElementById('camp-msg').value;
                 const listId = document.getElementById('camp-list-selector').value;
-                
                 if(!listId) return Utils.toast("Select a List!", "error");
                 
-                UI.log(`Creating Campaign: ${name}...`, 'info');
-                
-                // Get Contacts from Cloud
+                UI.log(`Initializing Campaign: ${name}...`, 'info');
                 const { contacts } = await DataStore.getListContent(listId);
-                
-                // Create Campaign in DB
                 const campId = await DataStore.createCampaign(name, msg, contacts, State.activeFile);
+                
                 if(campId) {
                     State.activeCampId = campId;
-                    this.renderHistory();
+                    this.renderDashboardHistory();
                     this.loadCampaign(campId);
                     Utils.toast("Campaign Created!", "success");
                 }
@@ -322,21 +347,64 @@
                 
                 const pct = (camp.sent_count / camp.total_count) * 100;
                 document.getElementById('camp-progress').style.width = `${pct}%`;
+                
+                this.updateQueuePreview();
             },
 
-            async renderHistory() {
-                const list = document.getElementById('campaign-list');
+            // 3. Render Dashboard History
+            async renderDashboardHistory() {
+                const list = document.getElementById('dash-history-body');
                 const campaigns = await DataStore.getCampaigns();
                 list.innerHTML = '';
+                
                 campaigns.forEach(c => {
-                    const div = document.createElement('div');
-                    div.className = `p-3 border-b border-slate-50 cursor-pointer hover:bg-slate-50 ${State.activeCampId===c.id ? 'bg-blue-50' : ''}`;
-                    div.onclick = () => Engine.loadCampaign(c.id);
-                    div.innerHTML = `<div class="flex justify-between font-bold text-[11px] text-slate-700"><span>${c.name}</span><span class="text-xs ${c.sent_count===c.total_count?'text-emerald-500':'text-amber-500'}">${c.sent_count}/${c.total_count}</span></div>`;
-                    list.appendChild(div);
+                    const pct = Math.round((c.sent_count / c.total_count) * 100) || 0;
+                    const row = document.createElement('tr');
+                    row.className = "border-b border-slate-50 hover:bg-slate-50 transition-colors";
+                    row.innerHTML = `
+                        <td class="px-6 py-3 font-bold">${c.name}</td>
+                        <td class="px-6 py-3"><span class="px-2 py-1 rounded-full text-[10px] font-bold ${c.status==='completed'?'bg-emerald-100 text-emerald-600':(c.status==='ready'?'bg-blue-100 text-blue-600':'bg-amber-100 text-amber-600')}">${c.status.toUpperCase()}</span></td>
+                        <td class="px-6 py-3">${pct}% <span class="text-slate-400 text-[10px]">(${c.sent_count}/${c.total_count})</span></td>
+                        <td class="px-6 py-3 text-right"><button onclick="Engine.openReuseModal('${c.id}')" class="text-xs font-bold text-brand-600 hover:underline">Reuse</button></td>
+                    `;
+                    list.appendChild(row);
                 });
+                
+                // Also update campaign tab sidebar
+                const sideList = document.getElementById('campaign-list');
+                if(sideList) {
+                    sideList.innerHTML = '';
+                    campaigns.forEach(c => {
+                        sideList.innerHTML += `<div class="p-3 border-b border-slate-50 cursor-pointer hover:bg-slate-50 ${State.activeCampId===c.id?'bg-blue-50':''}" onclick="Engine.loadCampaign('${c.id}')"><div class="flex justify-between font-bold text-[11px] text-slate-700"><span>${c.name}</span><span class="${c.status==='completed'?'text-emerald-500':'text-amber-500'} uppercase">${c.status}</span></div><p class="text-[10px] text-slate-400">Sent: ${c.sent_count} | Total: ${c.total_count}</p></div>`;
+                    });
+                }
             },
 
+            // 4. REUSE LOGIC
+            openReuseModal(id) {
+                document.getElementById('reuse-id').value = id;
+                document.getElementById('modal-reuse').classList.remove('hidden');
+                Database.render(); // Ensure lists are loaded in the select box
+            },
+            async confirmReuse() {
+                const oldId = document.getElementById('reuse-id').value;
+                const listId = document.getElementById('reuse-list-select').value;
+                if(!listId) return Utils.toast("Please select a list", "error");
+                
+                document.getElementById('modal-reuse').classList.add('hidden');
+                Utils.toast("Cloning Campaign...", "info");
+                
+                const newId = await DataStore.duplicateCampaign(oldId, listId);
+                if(newId) {
+                    State.activeCampId = newId;
+                    Router.go('campaigns');
+                    this.renderDashboardHistory();
+                    this.loadCampaign(newId);
+                    Utils.toast("Ready to Start", "success");
+                }
+            },
+
+            // 5. Engine Loop
             toggle() {
                 State.isRunning = !State.isRunning; 
                 document.getElementById('btn-engine-toggle').innerText = State.isRunning ? "PAUSE" : "START"; 
@@ -344,6 +412,12 @@
                 if(State.isRunning) this.process(); 
             },
             
+            async updateQueuePreview() {
+                const prev = document.getElementById('queue-preview');
+                const items = await DataStore.getQueuePreview(State.activeCampId);
+                prev.innerHTML = items.length ? items.map(i => `<div class="border-b border-slate-50 p-1 flex justify-between"><span>${i.name}</span><span>${i.number}</span></div>`).join('') : '<div class="p-2 italic opacity-50">Empty</div>';
+            },
+
             async process() {
                 if(!State.isRunning || !State.activeCampId) return;
 
@@ -394,7 +468,7 @@
         const Router = { go(p) { document.querySelectorAll('[id^="view-"]').forEach(v => v.classList.add('hidden')); document.getElementById(`view-${p}`).classList.remove('hidden'); document.querySelectorAll('.nav-item').forEach(n => { n.classList.remove('bg-brand-50','text-brand-600'); n.classList.add('text-slate-500'); }); document.getElementById(`nav-${p}`).classList.add('bg-brand-50','text-brand-600'); document.getElementById('page-title').innerText = p.charAt(0).toUpperCase() + p.slice(1); document.getElementById('sidebar').classList.add('-translate-x-full'); document.getElementById('mobile-overlay').classList.add('hidden'); } };
         const Settings = { save(k,v) { State.settings[k]=v; document.getElementById(`val-${k}`).innerText = v; } };
 
-        Session.renderBtn(); Database.render(); Session.check(); Engine.renderHistory();
+        Session.renderBtn(); Database.render(); Session.check(); Engine.renderDashboardHistory();
     </script>
 </body>
 </html>
