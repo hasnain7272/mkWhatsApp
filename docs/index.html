@@ -19,6 +19,8 @@
         .no-scrollbar { -ms-overflow-style: none;  scrollbar-width: none; }
         .fade-in { animation: fadeIn 0.2s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+        /* Search Input Animation */
+        .search-active { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 h-screen w-full flex overflow-hidden selection:bg-brand-500 selection:text-white">
@@ -27,7 +29,7 @@
     <div id="toasts" class="absolute bottom-6 right-6 flex flex-col gap-2 pointer-events-none z-[100]"></div>
 
     <script>
-        // --- 1. VIRTUAL DOM & REACTIVITY ---
+        // --- 1. CORE UTILS & VIRTUAL DOM ---
         const h = (tag, classes, content, props = {}) => {
             const el = document.createElement(tag);
             if (classes) el.className = classes;
@@ -36,281 +38,266 @@
             return el;
         };
 
+        const Utils = {
+            toast: (msg, type='info') => {
+                const c = document.getElementById('toasts'); const el = document.createElement('div');
+                el.className = `${type === 'success' ? 'bg-emerald-600' : 'bg-slate-800'} text-white px-4 py-3 rounded-lg shadow-xl text-xs font-bold animate-bounce`;
+                el.innerText = msg; c.appendChild(el); setTimeout(() => el.remove(), 3000);
+            },
+            debounce: (func, wait) => { let t; return (...args) => { clearTimeout(t); t = setTimeout(() => func(...args), wait); }; }
+        };
+
+        const API_BASE = "https://mkwhatsapp.onrender.com";
+
+        // --- 2. STATE MANAGEMENT ---
         const State = new Proxy({
             user: 'client-1', route: 'dashboard', status: 'OFFLINE', qr: null,
             queue: [], processedCount: 0, 
             allContacts: [], selection: new Set(), tempMemory: new Map(),
-            activeTab: 'list', // for mobile contacts view
+            activeTab: 'list', // Mobile Switch
             settings: { batch: 20, cool: 60 },
             sidebarOpen: false
         }, {
             set(target, key, value) {
                 target[key] = value;
-                if (['route', 'activeTab'].includes(key)) Render.main();
-                if (['user', 'status'].includes(key)) Render.sidebar();
-                if (key === 'queue' || key === 'processedCount') Render.header();
+                if (key === 'route') { Render.main(); State.sidebarOpen = false; }
+                if (key === 'user') { Render.sidebarControls(); Logic.checkSession(); }
+                if (key === 'status') Render.actionArea();
+                if (key === 'qr') Render.actionArea();
+                if (key === 'queue' || key === 'processedCount') Render.headerStats();
                 if (key === 'sidebarOpen') {
                     const sb = document.getElementById('sidebar');
                     const ov = document.getElementById('mobile-overlay');
-                    if (value) { sb.classList.remove('-translate-x-full'); ov.classList.remove('hidden'); }
-                    else { sb.classList.add('-translate-x-full'); ov.classList.add('hidden'); }
+                    if(sb && ov) {
+                        if (value) { sb.classList.remove('-translate-x-full'); ov.classList.remove('hidden'); }
+                        else { sb.classList.add('-translate-x-full'); ov.classList.add('hidden'); }
+                    }
                 }
                 return true;
             }
         });
 
-        // --- 2. THE RENDERER (Restoring v1.0 Visuals) ---
+        // --- 3. UI RENDERER ---
         const Render = {
             init() {
                 const app = document.getElementById('app');
                 app.innerHTML = '';
-                // Mobile Overlay
                 app.append(h('div', 'fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 hidden transition-opacity', '', { id: 'mobile-overlay', onClick: () => State.sidebarOpen = false }));
-                // Sidebar
-                app.append(this.sidebarFrame());
-                // Main Content
+                app.append(this.sidebarStructure());
                 app.append(h('main', 'flex-1 relative flex flex-col h-full overflow-hidden bg-white md:bg-slate-50/30 md:ml-72 transition-all', [
-                    this.headerFrame(),
+                    this.headerStructure(),
                     h('div', 'flex-1 overflow-y-auto p-4 md:p-6 relative no-scrollbar', [], { id: 'view-root' })
                 ]));
                 this.main();
+                this.sidebarControls(); // Initial render of buttons
+                this.actionArea();      // Initial render of Init/QR
             },
 
-            sidebarFrame() {
+            sidebarStructure() {
                 return h('aside', 'fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 -translate-x-full md:translate-x-0 shadow-2xl md:shadow-none', [
                     h('div', 'h-16 flex items-center px-6 border-b border-slate-100 shrink-0', [
-                        h('div', 'w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-brand-500/30', h('i', '', '', { 'data-lucide': 'layers', class: 'w-5 h-5' })),
-                        h('div', '', [h('h1', 'font-bold text-lg tracking-tight leading-none', 'Nexus OS'), h('span', 'text-[10px] font-bold text-slate-400 uppercase tracking-widest', 'Enterprise')]),
+                        h('div', 'w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3', h('i', '', '', { 'data-lucide': 'layers', class: 'w-5 h-5' })),
+                        h('div', '', [h('h1', 'font-bold text-lg', 'Nexus OS'), h('span', 'text-[10px] font-bold text-slate-400 uppercase', 'Enterprise')]),
                         h('button', 'ml-auto md:hidden text-slate-400 p-2', h('i', '', '', { 'data-lucide': 'x', class: 'w-5 h-5' }), { onClick: () => State.sidebarOpen = false })
                     ]),
-                    h('div', 'flex-1 p-4 overflow-y-auto space-y-6', [], { id: 'sidebar-content' }), // Dynamic Content Injection Target
-                    h('div', 'p-4 border-t border-slate-100 bg-slate-50/50 shrink-0', [
-                        h('div', 'flex justify-between items-center mb-2', [h('span', 'text-[10px] font-bold text-slate-500 uppercase', 'Engine Status'), h('span', 'text-[10px] font-bold text-brand-600', 'IDLE')]),
-                        h('div', 'w-full bg-slate-200 h-1 rounded-full overflow-hidden', h('div', 'h-full bg-brand-600 w-0 transition-all duration-300', '', { id: 'progress-bar' }))
+                    h('div', 'flex-1 p-4 overflow-y-auto space-y-6', [
+                        h('div', 'bg-slate-50 rounded-xl p-4 border border-slate-100', [
+                            h('div', 'flex items-center justify-between mb-3', [
+                                h('span', 'text-[10px] uppercase font-bold text-slate-400', 'Session'),
+                                h('span', 'w-2 h-2 rounded-full bg-slate-300', '', { id: 'status-dot' })
+                            ]),
+                            h('div', 'grid grid-cols-2 gap-2 mb-3', [], { id: 'node-buttons' }),
+                            h('div', '', [], { id: 'action-area' })
+                        ]),
+                        h('nav', 'space-y-1', [], { id: 'nav-links' })
+                    ]),
+                    h('div', 'p-4 border-t border-slate-100 bg-slate-50/50', [
+                        h('div', 'flex justify-between items-center mb-2', [h('span', 'text-[10px] font-bold text-slate-500 uppercase', 'Engine'), h('span', 'text-[10px] font-bold text-brand-600', 'IDLE')]),
+                        h('div', 'w-full bg-slate-200 h-1 rounded-full', h('div', 'h-full bg-brand-600 w-0', '', { id: 'prog-bar' }))
                     ])
                 ], { id: 'sidebar' });
             },
 
-            sidebar() {
-                const container = document.getElementById('sidebar-content');
-                if (!container) return;
-                container.innerHTML = '';
-
-                // Node Selector (Glassy Card)
-                container.append(h('div', 'bg-slate-50 rounded-xl p-4 border border-slate-100', [
-                    h('div', 'flex items-center justify-between mb-3', [
-                        h('span', 'text-[10px] uppercase font-bold text-slate-400 tracking-wider', 'Session'),
-                        h('span', `w-2 h-2 rounded-full transition-colors duration-300 ${State.status === 'READY' ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : (State.status === 'INIT' ? 'bg-amber-500 animate-ping' : 'bg-slate-300')}`)
-                    ]),
-                    h('div', 'grid grid-cols-2 gap-2 mb-3', [
-                        h('button', `py-2 text-[10px] font-bold rounded-lg border transition-all ${State.user === 'client-1' ? 'border-brand-600 bg-brand-600 text-white shadow-md' : 'border-transparent bg-white text-slate-500 hover:bg-slate-100'}`, 'NODE 1', { onClick: () => State.user = 'client-1' }),
-                        h('button', `py-2 text-[10px] font-bold rounded-lg border transition-all ${State.user === 'client-2' ? 'border-brand-600 bg-brand-600 text-white shadow-md' : 'border-transparent bg-white text-slate-500 hover:bg-slate-100'}`, 'NODE 2', { onClick: () => State.user = 'client-2' })
-                    ]),
-                    this.actionButton()
-                ]));
-
-                // Navigation
-                const navItems = [
-                    { id: 'dashboard', label: 'Dashboard', icon: 'layout-grid' },
-                    { id: 'campaigns', label: 'Campaigns', icon: 'megaphone' },
-                    { id: 'contacts', label: 'Contacts', icon: 'book-user' },
-                    { id: 'settings', label: 'Config', icon: 'settings' }
-                ];
-                container.append(h('nav', 'space-y-1', navItems.map(n => 
-                    h('button', `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all ${State.route === n.id ? 'bg-brand-50 text-brand-600' : 'text-slate-500 hover:bg-slate-100'}`, [
-                        h('i', '', '', { 'data-lucide': n.icon, class: 'w-4 h-4' }), n.label
-                    ], { onClick: () => { State.route = n.id; State.sidebarOpen = false; } })
-                )));
+            sidebarControls() {
+                // Nodes
+                const nodes = document.getElementById('node-buttons');
+                if(nodes) {
+                    nodes.innerHTML = '';
+                    nodes.append(h('button', `py-2 text-[10px] font-bold rounded-lg border transition-all ${State.user==='client-1'?'bg-brand-600 text-white':'bg-white text-slate-500'}`, 'NODE 1', { onClick: () => State.user='client-1' }));
+                    nodes.append(h('button', `py-2 text-[10px] font-bold rounded-lg border transition-all ${State.user==='client-2'?'bg-brand-600 text-white':'bg-white text-slate-500'}`, 'NODE 2', { onClick: () => State.user='client-2' }));
+                }
+                // Nav
+                const nav = document.getElementById('nav-links');
+                if(nav) {
+                    nav.innerHTML = '';
+                    const items = [
+                        { id: 'dashboard', label: 'Dashboard', icon: 'layout-grid' },
+                        { id: 'campaigns', label: 'Campaigns', icon: 'megaphone' },
+                        { id: 'contacts', label: 'Contacts', icon: 'book-user' },
+                        { id: 'settings', label: 'Config', icon: 'settings' }
+                    ];
+                    items.forEach(n => {
+                        nav.append(h('button', `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all ${State.route===n.id ? 'bg-brand-50 text-brand-600' : 'text-slate-500 hover:bg-slate-100'}`, [
+                            h('i', '', '', { 'data-lucide': n.icon, class: 'w-4 h-4' }), n.label
+                        ], { onClick: () => State.route = n.id }));
+                    });
+                }
                 lucide.createIcons();
             },
 
-            actionButton() {
-                if (State.status === 'READY') return h('button', 'w-full py-2 bg-red-50 text-red-600 text-xs font-bold rounded-lg hover:bg-red-100 border border-red-100', 'Disconnect', { onClick: Logic.stop });
-                if (State.status === 'QR_READY') {
-                    setTimeout(() => { if(State.qr && document.getElementById('mini-qr')) new QRious({ element: document.getElementById('mini-qr'), value: State.qr, size: 100 }); }, 50);
-                    return h('div', 'text-center bg-white p-2 rounded border', [h('canvas', '', '', { id: 'mini-qr' }), h('p', 'text-[10px] mt-1', 'Scan QR')]);
+            actionArea() {
+                const area = document.getElementById('action-area');
+                const dot = document.getElementById('status-dot');
+                if(!area || !dot) return;
+                
+                area.innerHTML = '';
+                if (State.status === 'READY') {
+                    dot.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]";
+                    area.append(h('button', 'w-full py-2 bg-red-50 text-red-600 text-xs font-bold rounded-lg hover:bg-red-100 border border-red-100', 'Disconnect', { onClick: Logic.stop }));
+                } else if (State.status === 'QR_READY') {
+                    dot.className = "w-2 h-2 rounded-full bg-blue-500 animate-pulse";
+                    const canvas = h('canvas', 'mx-auto border p-1 rounded bg-white w-24 h-24 mb-2');
+                    area.append(h('div', 'text-center', [canvas, h('p', 'text-[10px] text-slate-400', 'Scan QR')]));
+                    if(State.qr) new QRious({ element: canvas, value: State.qr, size: 100 });
+                } else if (State.status === 'INIT') {
+                    dot.className = "w-2 h-2 rounded-full bg-amber-500 animate-ping";
+                    area.append(h('div', 'text-center text-xs text-slate-400 py-2', 'Initializing...'));
+                } else {
+                    dot.className = "w-2 h-2 rounded-full bg-slate-300";
+                    area.append(h('button', 'w-full py-2 bg-slate-800 text-white text-xs font-bold rounded-lg hover:bg-slate-900', 'Initialize', { onClick: Logic.start }));
                 }
-                return h('button', 'w-full py-2 bg-slate-800 text-white text-xs font-bold rounded-lg hover:bg-slate-900', 'Initialize', { onClick: Logic.start });
             },
 
-            headerFrame() {
+            headerStructure() {
                 return h('header', 'h-16 px-4 md:px-8 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-30', [
                     h('div', 'flex items-center gap-3', [
                         h('button', 'md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg', h('i', '', '', { 'data-lucide': 'menu', class: 'w-5 h-5' }), { onClick: () => State.sidebarOpen = true }),
                         h('h2', 'text-lg md:text-xl font-bold text-slate-800', '', { id: 'header-title' })
                     ]),
-                    h('div', 'px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600 shadow-sm flex items-center gap-2', [
+                    h('div', 'px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600 flex items-center gap-2', [
                         h('span', 'w-2 h-2 rounded-full bg-slate-300', '', { id: 'header-dot' }),
                         h('span', '', 'Q: 0', { id: 'header-queue' })
                     ])
                 ]);
             },
 
-            header() {
-                document.getElementById('header-queue').textContent = `Q: ${State.queue.length}`;
-                document.getElementById('header-dot').className = `w-2 h-2 rounded-full ${State.queue.length ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`;
+            headerStats() {
+                const q = document.getElementById('header-queue');
+                const d = document.getElementById('header-dot');
+                if(q) q.innerText = `Q: ${State.queue.length}`;
+                if(d) d.className = `w-2 h-2 rounded-full ${State.queue.length > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`;
             },
 
-            // --- VIEW ROUTER ---
             main() {
-                this.sidebar(); // Update active states
                 const root = document.getElementById('view-root');
                 root.innerHTML = '';
-                document.getElementById('header-title').textContent = State.route.charAt(0).toUpperCase() + State.route.slice(1);
-
-                if (State.route === 'dashboard') root.append(this.viewDashboard());
-                else if (State.route === 'campaigns') root.append(this.viewCampaigns());
-                else if (State.route === 'contacts') root.append(this.viewContacts());
-                else if (State.route === 'settings') root.append(this.viewSettings());
+                document.getElementById('header-title').innerText = State.route.charAt(0).toUpperCase() + State.route.slice(1);
                 
+                if (State.route === 'dashboard') root.append(this.views.dashboard());
+                else if (State.route === 'campaigns') root.append(this.views.campaigns());
+                else if (State.route === 'contacts') root.append(this.views.contacts());
+                else if (State.route === 'settings') root.append(this.views.settings());
+                
+                this.sidebarControls(); // Update active states
                 lucide.createIcons();
             },
 
-            // --- VIEWS ---
-            viewDashboard() {
-                return h('div', 'max-w-6xl mx-auto space-y-6 fade-in', [
-                    h('div', 'grid grid-cols-1 md:grid-cols-3 gap-4', [
-                        this.card('users', 'Contacts Stored', State.allContacts.length),
-                        this.card('send', 'Total Sent', State.processedCount),
-                        this.card('shield', 'Safety Mode', 'Active', 'text-amber-500')
-                    ]),
-                    h('div', 'bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden', [
-                        h('div', 'px-6 py-4 border-b border-slate-100 bg-slate-50/50', h('h3', 'font-bold text-sm text-slate-700', 'Recent Activity')),
-                        h('div', 'p-8 text-center text-xs text-slate-400 italic', 'System Ready. Waiting for dispatch.')
-                    ])
-                ]);
-            },
-
-            viewCampaigns() {
-                return h('div', 'flex flex-col md:flex-row gap-6 h-full fade-in', [
-                    h('div', 'w-full md:w-[400px] flex flex-col gap-4 shrink-0', [
-                        h('div', 'bg-white border border-slate-200 p-5 rounded-xl shadow-sm flex-1', [
-                            h('h3', 'font-bold text-slate-700 text-sm mb-4', 'Target Audience'),
-                            h('select', 'w-full bg-slate-50 border border-slate-200 rounded px-2 py-2 text-xs outline-none font-medium text-slate-600 mb-4 focus:border-brand-500', 
-                                [h('option', '', 'Load Saved List...'), ...this.getListOptions()], 
-                                { onChange: (e) => Logic.loadListToCamp(e.target.value) }
-                            ),
-                            h('textarea', 'w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-mono outline-none h-32 mb-4 resize-none focus:bg-white transition-all', '', { id: 'camp-input', placeholder: 'Numbers (one per line)...' }),
-                            h('div', 'space-y-3', [
-                                h('input', 'w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs outline-none focus:bg-white transition-all', '', { id: 'camp-msg', placeholder: 'Message...' }),
-                                h('div', 'border border-dashed border-slate-300 rounded-lg p-3 flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50', [
-                                    h('i', '', '', { 'data-lucide': 'paperclip', class: 'w-4 h-4 text-slate-400' }),
-                                    h('span', 'text-xs font-bold text-slate-500 truncate', 'Attach File', { id: 'file-label' }),
-                                    h('input', 'hidden', '', { type: 'file', onChange: Logic.handleFile })
-                                ], { onClick: () => document.querySelector('input[type=file]').click() })
-                            ])
-                        ]),
-                        h('button', 'w-full py-3 bg-slate-800 text-white rounded-xl font-bold shadow-lg hover:bg-slate-900 transition-all flex justify-center gap-2', [h('i', '', '', { 'data-lucide': 'plus', class: 'w-4 h-4' }), 'Add to Queue'], { onClick: Logic.queue })
-                    ]),
-                    h('div', 'flex-1 bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden shadow-sm h-[400px] md:h-auto', [
-                        h('div', 'h-14 border-b border-slate-100 flex items-center justify-between px-5 bg-slate-50/50', [
-                            h('span', 'text-xs font-bold text-slate-500 uppercase tracking-wider', 'Dispatcher Console'),
-                            h('div', 'flex gap-2', [
-                                h('button', 'text-[10px] font-bold px-4 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200', 'START', { id: 'btn-toggle', onClick: Logic.toggle }),
-                                h('button', 'text-[10px] font-bold px-4 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200', 'CLEAR', { onClick: Logic.clear })
-                            ])
-                        ]),
-                        h('div', 'flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs bg-slate-50', [], { id: 'console-logs' })
-                    ])
-                ]);
-            },
-
-            viewContacts() {
-                // Mobile Tabs
-                const mobileTabs = h('div', 'flex md:hidden bg-slate-100 p-1 rounded-lg mb-4 shrink-0', [
-                    h('button', `flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${State.activeTab==='list' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`, 'Search', { onClick: () => State.activeTab = 'list' }),
-                    h('button', `flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${State.activeTab==='tools' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`, 'Lists', { onClick: () => State.activeTab = 'tools' })
-                ]);
-
-                // Left Panel (Search)
-                const leftPanel = h('div', `flex-1 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col overflow-hidden h-full ${State.activeTab==='list' ? 'flex' : 'hidden md:flex'}`, [
-                    h('div', 'p-3 border-b border-slate-100 flex gap-2 shrink-0', [
-                        h('div', 'relative flex-1', [
-                            h('i', 'absolute left-3 top-3 text-slate-400', '', { 'data-lucide': 'search', class: 'w-4 h-4' }),
-                            h('input', 'pl-9 w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500 transition-all', '', { placeholder: 'Search...', onKeyup: Logic.filter })
-                        ]),
-                        h('button', 'px-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg', h('i', '', '', { 'data-lucide': 'refresh-cw', class: 'w-4 h-4' }), { onClick: Logic.sync })
-                    ]),
-                    h('div', 'px-4 py-2 bg-slate-50/80 border-b border-slate-100 flex justify-between shrink-0', [
-                        h('span', 'text-[10px] font-bold text-slate-400 uppercase', `Global Memory: ${State.allContacts.length}`),
-                        h('span', 'text-[10px] font-bold text-brand-600 uppercase', `Selected: ${State.selection.size}`, { id: 'sel-count' })
-                    ]),
-                    h('div', 'flex-1 overflow-y-auto p-2 space-y-1', [], { id: 'contact-grid' }) // Grid Target
-                ]);
-
-                // Right Panel (Tools)
-                const rightPanel = h('div', `w-full md:w-[320px] flex flex-col gap-4 shrink-0 h-full overflow-y-auto ${State.activeTab==='tools' ? 'flex' : 'hidden md:flex'}`, [
-                    // Save
-                    h('div', 'bg-white p-4 rounded-xl border border-slate-200 shadow-sm shrink-0', [
-                        h('h3', 'font-bold text-slate-700 text-sm mb-3', 'List Manager'),
-                        h('input', 'w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500 mb-2', '', { id: 'list-name', placeholder: 'List Name...' }),
-                        h('div', 'grid grid-cols-2 gap-2', [
-                            h('button', 'py-2 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700', 'Save / Merge', { onClick: Logic.saveList }),
-                            h('button', 'py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50', 'Clear', { onClick: Logic.clearSelection })
+            views: {
+                dashboard() {
+                    return h('div', 'max-w-6xl mx-auto space-y-6 fade-in', [
+                        h('div', 'grid grid-cols-1 md:grid-cols-3 gap-4', [
+                            Render.card('users', 'Contacts', State.allContacts.length),
+                            Render.card('send', 'Sent', State.processedCount),
+                            Render.card('shield', 'System', 'Active', 'text-emerald-500')
                         ])
-                    ]),
-                    // Saved Lists
-                    h('div', 'bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[200px]', [
-                        h('div', 'flex justify-between items-center mb-3', [
-                            h('h3', 'font-bold text-slate-700 text-sm', 'Saved Lists'),
-                            h('button', 'text-[10px] font-bold text-brand-600 bg-brand-50 px-2 py-1 rounded hover:bg-brand-100', '+ Manual List', { onClick: () => Logic.openListModal('') })
-                        ]),
-                        h('div', 'flex-1 overflow-y-auto space-y-2 pr-1', this.getSavedLists())
-                    ]),
-                    // Import
-                    h('div', 'bg-white p-4 rounded-xl border border-slate-200 shadow-sm shrink-0', [
-                        h('div', 'flex justify-between items-center mb-2', [h('h3', 'font-bold text-slate-700 text-sm', 'Import Group'), h('button', 'text-[10px] font-bold text-brand-600', 'FETCH', { onClick: Logic.loadGroups })]),
-                        h('select', 'w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs mb-2', [h('option', '', 'Fetch First')], { id: 'group-selector', disabled: true }),
-                        h('button', 'w-full py-2 bg-slate-800 text-white rounded-lg text-xs font-bold opacity-50', 'Import', { id: 'btn-import', disabled: true, onClick: Logic.fetchSelected })
-                    ])
-                ]);
-
-                return h('div', 'flex flex-col md:flex-row gap-6 h-full fade-in', [mobileTabs, leftPanel, rightPanel]);
-            },
-
-            viewSettings() {
-                return h('div', 'max-w-xl mx-auto fade-in', [
-                    h('div', 'bg-white p-8 rounded-xl border border-slate-200 shadow-sm', [
-                        h('h3', 'font-bold text-lg text-slate-800 mb-6', 'Configuration'),
-                        h('div', 'space-y-6', [
-                            h('div', '', [
-                                h('div', 'flex justify-between mb-2', [h('label', 'text-xs font-bold text-slate-600', 'Batch Size'), h('span', 'text-xs font-bold text-brand-600', State.settings.batch, { id: 'val-batch' })]),
-                                h('input', 'w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer', '', { type: 'range', min: 5, max: 50, value: State.settings.batch, onInput: (e) => { State.settings.batch = e.target.value; document.getElementById('val-batch').innerText = e.target.value; } })
+                    ]);
+                },
+                campaigns() {
+                    return h('div', 'flex flex-col md:flex-row gap-6 h-full fade-in', [
+                        h('div', 'w-full md:w-[400px] flex flex-col gap-4', [
+                            h('div', 'bg-white border border-slate-200 p-5 rounded-xl shadow-sm flex-1', [
+                                h('h3', 'font-bold text-slate-700 text-sm mb-4', 'Target List'),
+                                h('select', 'w-full bg-slate-50 border border-slate-200 rounded px-2 py-2 text-xs outline-none mb-4', 
+                                    [h('option', '', 'Load List...'), ...Render.getLists()], 
+                                    { onChange: (e) => Logic.loadListToCamp(e.target.value) }
+                                ),
+                                h('textarea', 'w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-mono h-32 mb-4 resize-none', '', { id: 'camp-input', placeholder: 'Numbers...' }),
+                                h('input', 'w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs', '', { id: 'camp-msg', placeholder: 'Message...' })
                             ]),
-                            h('div', '', [
-                                h('div', 'flex justify-between mb-2', [h('label', 'text-xs font-bold text-slate-600', 'Cool-down (s)'), h('span', 'text-xs font-bold text-brand-600', State.settings.cool, { id: 'val-cool' })]),
-                                h('input', 'w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer', '', { type: 'range', min: 10, max: 300, value: State.settings.cool, onInput: (e) => { State.settings.cool = e.target.value; document.getElementById('val-cool').innerText = e.target.value; } })
+                            h('button', 'w-full py-3 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-900', 'Add to Queue', { onClick: Logic.queue })
+                        ]),
+                        h('div', 'flex-1 bg-white border border-slate-200 rounded-xl flex flex-col h-[400px] md:h-auto', [
+                            h('div', 'h-14 border-b border-slate-100 flex items-center justify-between px-5', [
+                                h('span', 'text-xs font-bold text-slate-500 uppercase', 'Console'),
+                                h('button', 'px-4 py-1 rounded bg-emerald-100 text-emerald-700 text-[10px] font-bold', 'START', { id: 'btn-toggle', onClick: Logic.toggleEngine })
+                            ]),
+                            h('div', 'flex-1 p-4 overflow-y-auto font-mono text-xs space-y-2', [], { id: 'console-logs' })
+                        ])
+                    ]);
+                },
+                contacts() {
+                    return h('div', 'flex flex-col md:flex-row gap-6 h-full fade-in', [
+                        // Left
+                        h('div', 'flex-1 bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden', [
+                            h('div', 'p-3 border-b border-slate-100 flex gap-2', [
+                                h('div', 'relative flex-1', [
+                                    h('i', 'absolute left-3 top-2.5 text-slate-400', '', { 'data-lucide': 'search', class: 'w-4 h-4' }),
+                                    h('input', 'pl-9 w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs outline-none focus:bg-white focus:border-brand-500 transition-all', '', { 
+                                        placeholder: 'Search...', 
+                                        onInput: (e) => Logic.filterContacts(e.target.value) // Direct Binding
+                                    })
+                                ]),
+                                h('button', 'px-3 bg-slate-100 rounded hover:bg-slate-200', h('i', '', '', { 'data-lucide': 'refresh-cw', class: 'w-4 h-4' }), { onClick: Logic.sync })
+                            ]),
+                            h('div', 'flex-1 overflow-y-auto p-2 space-y-1', [], { id: 'contact-list' })
+                        ]),
+                        // Right
+                        h('div', 'w-full md:w-[320px] flex flex-col gap-4', [
+                            h('div', 'bg-white p-4 rounded-xl border border-slate-200', [
+                                h('h3', 'font-bold text-sm mb-2', 'List Manager'),
+                                h('input', 'w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs mb-2', '', { id: 'list-name', placeholder: 'List Name...' }),
+                                h('button', 'w-full py-2 bg-brand-600 text-white rounded text-xs font-bold', 'Save Selection', { onClick: Logic.saveList })
+                            ]),
+                            h('div', 'bg-white p-4 rounded-xl border border-slate-200 flex-1', [
+                                h('h3', 'font-bold text-sm mb-2', 'Saved Lists'),
+                                h('div', 'space-y-2 overflow-y-auto max-h-[200px]', Render.getSavedListsUI())
                             ])
                         ])
-                    ])
-                ]);
+                    ]);
+                },
+                settings() {
+                    return h('div', 'max-w-xl mx-auto fade-in', [
+                        h('div', 'bg-white p-8 rounded-xl border border-slate-200 shadow-sm', [
+                            h('h3', 'font-bold text-lg mb-6', 'Configuration'),
+                            h('label', 'text-xs font-bold text-slate-500 block mb-2', 'Batch Size'),
+                            h('input', 'w-full accent-brand-600 mb-6', '', { type: 'range', min: 5, max: 50, value: State.settings.batch, onInput: (e) => State.settings.batch = e.target.value }),
+                            h('label', 'text-xs font-bold text-slate-500 block mb-2', 'Cool-down (s)'),
+                            h('input', 'w-full accent-brand-600', '', { type: 'range', min: 10, max: 300, value: State.settings.cool, onInput: (e) => State.settings.cool = e.target.value })
+                        ])
+                    ]);
+                }
             },
 
-            // --- HELPER COMPONENTS ---
             card(icon, label, val, col='text-brand-500') {
                 return h('div', 'bg-white p-6 rounded-xl border border-slate-200 shadow-sm', [
                     h('div', 'flex items-center gap-3 mb-2', [h('i', '', '', { 'data-lucide': icon, class: `w-4 h-4 ${col}` }), h('span', 'text-xs font-bold text-slate-400 uppercase', label)]),
-                    h('p', 'text-3xl font-bold text-slate-800 tracking-tight', val)
+                    h('p', 'text-3xl font-bold text-slate-800', val)
                 ]);
             },
-            getListOptions() {
+            getLists() {
                 const opts = [];
                 Object.keys(localStorage).forEach(k => { if(k.startsWith('nexus_list_')) opts.push(h('option', '', k.replace('nexus_list_', ''), {value: k})); });
                 return opts;
             },
-            getSavedLists() {
+            getSavedListsUI() {
                 const items = [];
                 Object.keys(localStorage).forEach(k => {
                     if(k.startsWith('nexus_list_')) {
-                        const name = k.replace('nexus_list_', '');
-                        const count = JSON.parse(localStorage.getItem(k)).length;
-                        items.push(h('div', 'flex justify-between items-center p-3 bg-slate-50 border border-slate-200 rounded-lg hover:border-slate-300 transition-colors', [
-                            h('div', '', [h('p', 'text-xs font-bold text-slate-700', name), h('p', 'text-[10px] text-slate-400', `${count} items`)]),
+                        items.push(h('div', 'flex justify-between items-center p-2 bg-slate-50 border border-slate-200 rounded', [
+                            h('span', 'text-xs font-bold', k.replace('nexus_list_', '')),
                             h('div', 'flex gap-1', [
-                                h('button', 'p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-green-600', h('i', '', '', {'data-lucide': 'download', class: 'w-3 h-3'}), { title: 'Export', onClick: () => Logic.exportCSV(k) }),
-                                h('button', 'p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-brand-600', h('i', '', '', {'data-lucide': 'check-square', class: 'w-3 h-3'}), { title: 'Select', onClick: () => Logic.loadListToSelect(k) }),
-                                h('button', 'p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-blue-600', h('i', '', '', {'data-lucide': 'pencil', class: 'w-3 h-3'}), { title: 'Edit', onClick: () => Logic.openListModal(k) }),
-                                h('button', 'p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-red-500', h('i', '', '', {'data-lucide': 'trash', class: 'w-3 h-3'}), { onClick: () => { if(confirm('Delete?')) { localStorage.removeItem(k); Render.main(); } } })
+                                h('button', 'p-1 hover:text-brand-600', h('i', '', '', { 'data-lucide': 'check-square', class: 'w-3 h-3' }), { onClick: () => Logic.loadListToSelect(k) }),
+                                h('button', 'p-1 hover:text-red-500', h('i', '', '', { 'data-lucide': 'trash', class: 'w-3 h-3' }), { onClick: () => { localStorage.removeItem(k); Render.main(); } })
                             ])
                         ]));
                     }
@@ -319,47 +306,48 @@
             }
         };
 
-        // --- 3. BUSINESS LOGIC ---
+        // --- 4. BUSINESS LOGIC ---
         const Logic = {
-            async api(path, body) { try { const r = await fetch(`${CONFIG.apiBase}/api/${path}`, body ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}:{}); return r.ok ? r.json() : null; } catch { return null; } },
-            checkSession: async () => { const r = await Logic.api(`status/${State.user}`); if(r) { State.status=r.status; State.qr=r.qr; } },
-            start: () => { Logic.api('start', {id:State.user}).then(()=>setTimeout(Logic.checkSession, 3000)); State.status='INIT'; },
-            stop: () => { if(confirm('Disconnect?')) Logic.api('logout', {id:State.user}); State.status='OFFLINE'; },
+            async api(path, body) { try { const r = await fetch(`${API_BASE}/api/${path}`, body ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}:{}); return r.ok ? r.json() : null; } catch { return null; } },
             
+            checkSession: async () => {
+                const res = await Logic.api(`status/${State.user}`);
+                if (res) { State.status = res.status; State.qr = res.qr; }
+            },
+            start: () => { State.status='INIT'; Logic.api('start', {id:State.user}); setTimeout(Logic.checkSession, 3000); },
+            stop: () => { Logic.api('logout', {id:State.user}); State.status='OFFLINE'; },
+
+            // Contacts
             sync: async () => {
-                const r = await Logic.api(`contacts/${State.user}`);
-                if(r && r.contacts) {
-                    r.contacts.forEach(c => {
-                        const exists = State.allContacts.find(x => x.number === c.number);
-                        if (!exists) State.allContacts.push(c);
-                        State.tempMemory.set(c.number, c.name);
-                    });
-                    State.allContacts.sort((a,b) => (a.name||'').localeCompare(b.name||''));
+                const res = await Logic.api(`contacts/${State.user}`);
+                if (res && res.contacts) {
+                    State.allContacts = res.contacts.sort((a,b) => (a.name||'').localeCompare(b.name||''));
                     Logic.renderContacts(State.allContacts.slice(0, 100));
-                    Utils.toast(`Synced! Memory: ${State.allContacts.length}`, 'success');
+                    Utils.toast(`Synced ${res.count} contacts`, 'success');
                 }
             },
             renderContacts: (list) => {
-                const grid = document.getElementById('contact-grid');
+                const grid = document.getElementById('contact-list');
                 if(!grid) return;
                 grid.innerHTML = '';
                 list.forEach(c => {
                     const isSel = State.selection.has(c.number);
-                    grid.append(h('div', `flex justify-between p-2.5 rounded-lg cursor-pointer transition-all border mb-1 ${isSel ? 'bg-brand-50 border-brand-500' : 'bg-white border-transparent hover:bg-slate-50'}`, [
+                    const row = h('div', `flex justify-between p-2.5 rounded-lg cursor-pointer border mb-1 transition-all ${isSel ? 'bg-brand-50 border-brand-500' : 'bg-white border-transparent hover:bg-slate-50'}`, [
                         h('div', 'flex items-center gap-3 pointer-events-none', [
                             h('div', `w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${isSel ? 'bg-brand-200 text-brand-700' : 'bg-slate-100 text-slate-500'}`, (c.name||'#').charAt(0).toUpperCase()),
-                            h('div', '', [h('h4', 'text-xs font-bold text-slate-700 truncate w-32 md:w-40', c.name||'Unknown'), h('p', 'text-[10px] text-slate-400 font-mono', c.number)])
+                            h('div', '', [h('h4', 'text-xs font-bold text-slate-700 truncate w-32', c.name||'Unknown'), h('p', 'text-[10px] text-slate-400 font-mono', c.number)])
                         ]),
                         h('div', `w-4 h-4 rounded-full border flex items-center justify-center text-[10px] ${isSel ? 'bg-brand-600 border-brand-600 text-white' : 'border-slate-300'}`, isSel ? '✓' : '')
-                    ], { onClick: (e) => {
+                    ], { onClick: () => {
                         if(State.selection.has(c.number)) State.selection.delete(c.number); else State.selection.add(c.number);
-                        Logic.renderContacts(list); // Re-render to update UI state
-                        document.getElementById('sel-count').innerText = `Selected: ${State.selection.size}`;
-                    }}));
+                        Logic.renderContacts(list); // Re-render local list to show update
+                        if(document.getElementById('sel-count')) document.getElementById('sel-count').innerText = `Selected: ${State.selection.size}`;
+                    }});
+                    grid.append(row);
                 });
             },
-            filter: (e) => {
-                const q = e.target.value.toLowerCase();
+            filterContacts: (q) => {
+                q = q.toLowerCase();
                 const res = State.allContacts.filter(c => (c.name||'').toLowerCase().includes(q) || c.number.includes(q));
                 Logic.renderContacts(res.slice(0, 100));
             },
@@ -369,111 +357,60 @@
                 const list = [];
                 State.selection.forEach(n => {
                     const c = State.allContacts.find(x => x.number === n);
-                    list.push({ name: c ? c.name : (State.tempMemory.get(n) || 'Manual'), number: n });
+                    list.push({ name: c ? c.name : 'Manual', number: n });
                 });
                 localStorage.setItem(`nexus_list_${name}`, JSON.stringify(list));
-                Utils.toast('Saved', 'success'); Logic.clearSelection(); Render.main();
+                Utils.toast('Saved', 'success');
+                Render.main(); // Refresh list view
             },
-            clearSelection: () => { State.selection.clear(); document.getElementById('sel-count').innerText='Selected: 0'; document.getElementById('new-list-name').value=''; Logic.filter({target:{value:''}}); },
-            
             loadListToSelect: (key) => {
-                Logic.clearSelection();
-                JSON.parse(localStorage.getItem(key)).forEach(i => { State.selection.add(i.number); State.tempMemory.set(i.number, i.name); });
+                const data = JSON.parse(localStorage.getItem(key));
+                State.selection.clear();
+                data.forEach(i => State.selection.add(i.number));
                 document.getElementById('list-name').value = key.replace('nexus_list_', '');
-                document.getElementById('sel-count').innerText = `Selected: ${State.selection.size}`;
-                Logic.filter({target:{value:''}}); Utils.toast('Loaded for Editing', 'success');
+                Utils.toast(`Loaded ${data.length} contacts`, 'success');
+                Logic.filterContacts(''); // Refresh view
             },
+
+            // Campaign
             loadListToCamp: (k) => {
                 if(!k) return;
-                document.getElementById('camp-input').value = JSON.parse(localStorage.getItem(k)).map(i => i.number).join('\n');
+                const data = JSON.parse(localStorage.getItem(k));
+                document.getElementById('camp-input').value = data.map(i => i.number).join('\n');
             },
-            
             queue: () => {
                 const raw = document.getElementById('camp-input').value;
-                const nums = raw.match(/\d{10,}/g) || [];
                 const msg = document.getElementById('camp-msg').value;
-                
-                // Name Lookup Map
-                const map = new Map();
-                State.allContacts.forEach(c => map.set(c.number, c.name));
-                Object.keys(localStorage).forEach(k => { if(k.startsWith('nexus_list_')) JSON.parse(localStorage.getItem(k)).forEach(i => map.set(i.number, i.name)); });
-
-                nums.forEach(n => State.queue.push({ number: n, name: map.get(n)||'Unknown', msg: msg, file: State.activeFile }));
+                const nums = raw.match(/\d{10,}/g) || [];
+                nums.forEach(n => State.queue.push({ number: n, msg }));
                 State.queue = [...State.queue]; // Trigger Proxy
-                Utils.toast(`${nums.length} Added`, 'success');
+                Utils.toast(`Added ${nums.length} to Queue`, 'success');
             },
-            toggle: () => { State.isRunning = !State.isRunning; document.getElementById('btn-toggle').innerText = State.isRunning ? 'PAUSE' : 'START'; if(State.isRunning) Logic.process(); },
-            clear: () => { State.queue = []; State.isRunning = false; Utils.toast('Queue Cleared'); },
+            toggleEngine: () => {
+                State.isRunning = !State.isRunning;
+                document.getElementById('btn-toggle').innerText = State.isRunning ? 'PAUSE' : 'START';
+                if(State.isRunning) Logic.process();
+            },
             process: async () => {
                 if(!State.isRunning || !State.queue.length) { State.isRunning = false; document.getElementById('btn-toggle').innerText = 'START'; return; }
                 const item = State.queue.shift(); State.queue = [...State.queue];
                 
                 const log = document.getElementById('console-logs');
-                log.prepend(h('div', 'text-slate-500 border-l-2 border-slate-200 pl-2', `> ${item.name} (${item.number})...`));
+                log.prepend(h('div', 'text-slate-500', `> Sending to ${item.number}...`));
                 
-                await Logic.api('send', { id: State.user, number: item.number, message: item.msg, file: item.file });
-                log.prepend(h('div', 'text-emerald-600 font-bold border-l-2 border-emerald-500 pl-2', `> SENT`));
+                await Logic.api('send', { id: State.user, number: item.number, message: item.msg });
                 State.processedCount++;
-
-                let delay = Math.random() * 2000 + 2000;
-                if(State.processedCount % parseInt(State.settings.batch) === 0) {
-                    delay = parseInt(State.settings.cool) * 1000;
-                    log.prepend(h('div', 'text-amber-500 font-bold text-center my-2', `-- COOLING DOWN (${State.settings.cool}s) --`));
-                }
-                setTimeout(Logic.process, delay);
-            },
-            
-            // CSV Export
-            exportCSV: (key) => {
-                const data = JSON.parse(localStorage.getItem(key));
-                const csv = "data:text/csv;charset=utf-8,Name,Number\n" + data.map(e => `${e.name},${e.number}`).join("\n");
-                const link = document.createElement("a"); link.href = encodeURI(csv); link.download = `${key.replace('nexus_list_','')}.csv`; link.click();
-            },
-            // Import Groups
-            loadGroups: async () => {
-                const r = await Logic.api(`groups/${State.user}`);
-                const s = document.getElementById('group-selector');
-                if(r && r.groups) {
-                    s.innerHTML = ''; s.disabled = false; document.getElementById('btn-import').disabled = false; document.getElementById('btn-import').classList.remove('opacity-50');
-                    r.groups.forEach(g => s.append(h('option', '', `${g.name} (${g.count})`, { value: g.id })));
-                    Utils.toast('Groups Loaded', 'success');
-                }
-            },
-            fetchSelected: async () => {
-                const id = document.getElementById('group-selector').value;
-                const r = await Logic.api(`get-members?id=${State.user}&groupJid=${encodeURIComponent(id)}`);
-                if(r && r.members) {
-                    localStorage.setItem(`nexus_list_Imp_${Date.now()}`, JSON.stringify(r.members));
-                    Utils.toast(`Imported ${r.count}`, 'success'); Render.main();
-                }
-            },
-            handleFile: (e) => { if(e.target.files[0]) Utils.processFile(e.target.files[0]).then(f => { State.activeFile = f; document.getElementById('file-label').innerText = e.target.files[0].name; }); },
-            
-            // Manual Modal
-            openListModal: (key) => {
-                document.body.append(h('div', 'fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 fade-in', [
-                    h('div', 'bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-100 flex flex-col h-[500px]', [
-                        h('div', 'flex justify-between items-center mb-2', [h('h3', 'font-bold text-lg', 'Manual Entry'), h('button', 'text-slate-400', h('i', '', '', {'data-lucide':'x', class:'w-5 h-5'}), { onClick: e => e.target.closest('.fixed').remove() })]),
-                        h('textarea', 'flex-1 w-full bg-slate-50 border border-slate-200 rounded-lg p-4 text-xs font-mono resize-none mb-4 focus:border-brand-500 outline-none', key ? JSON.parse(localStorage.getItem(key)).map(i=>`${i.number}|${i.name}`).join('\n') : '', { id: 'manual-area', placeholder: 'Number | Name' }),
-                        h('button', 'w-full py-2.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700', 'Save Changes', { onClick: (e) => {
-                            const raw = document.getElementById('manual-area').value;
-                            let listKey = key || `nexus_list_${prompt('List Name:')}`;
-                            if(!listKey.includes('nexus_list_')) return;
-                            const data = [];
-                            raw.split('\n').forEach(l => { if(l.trim()) { const p=l.split('|'); data.push({number:p[0].trim(), name:p[1]?p[1].trim():'Manual'}); } });
-                            localStorage.setItem(listKey, JSON.stringify(data));
-                            Utils.toast('Saved', 'success'); e.target.closest('.fixed').remove(); Render.main();
-                        }})
-                    ])
-                ]));
-                lucide.createIcons();
+                log.prepend(h('div', 'text-emerald-600 font-bold', `> Sent.`));
+                
+                setTimeout(Logic.process, 2000);
             }
         };
 
-        // --- 4. START ---
+        // --- 5. START ---
         Render.init();
         Logic.checkSession();
         setInterval(Logic.checkSession, 5000);
+
     </script>
 </body>
 </html>
