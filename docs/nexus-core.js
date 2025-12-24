@@ -1,5 +1,6 @@
 /**
- * NEXUS CORE v3.0 | Reusable Campaigns & Smart Queue
+ * NEXUS CORE v4.0 | Command Center Engine
+ * Focused on Database-First Execution and Reusability
  */
 
 const CONFIG = {
@@ -13,7 +14,7 @@ const { createClient } = supabase;
 const db = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
 
 const DataStore = {
-    // --- LISTS (Unchanged) ---
+    // --- 1. LISTS (Standard) ---
     async getLists() {
         const { data } = await db.from('lists').select('id, name, contacts').order('created_at', { ascending: false });
         return (data || []).map(i => ({ id: i.id, name: i.name, count: i.contacts ? i.contacts.length : 0 }));
@@ -26,91 +27,75 @@ const DataStore = {
         const { data: existing } = await db.from('lists').select('id').eq('name', name).single();
         if (existing) await db.from('lists').update({ contacts }).eq('id', existing.id);
         else await db.from('lists').insert([{ name, contacts }]);
-        return true;
     },
     async deleteList(id) { await db.from('lists').delete().eq('id', id); },
 
-    // --- CAMPAIGNS (Upgraded) ---
+    // --- 2. COMMAND CENTER (Campaigns) ---
     
-    // 1. Create New
+    // Create & Offload to Cloud immediately (Low RAM)
     async createCampaign(name, message, contactList, mediaFile) {
         let mediaData = null, mediaMime = null;
         if(mediaFile) { mediaData = mediaFile.data; mediaMime = mediaFile.mimetype; }
 
+        // A. Create Parent Record
         const { data: camp, error } = await db.from('campaigns').insert([{
             name: name, message: message, total_count: contactList.length, status: 'ready',
             media_data: mediaData, media_mime: mediaMime
         }]).select().single();
         
         if(error) return null;
-        await this._fillQueue(camp.id, contactList);
-        return camp.id;
-    },
 
-    // 2. REUSE / CLONE CAMPAIGN (New Feature)
-    async duplicateCampaign(oldCampId, newListId) {
-        // Fetch old data
-        const { data: old } = await db.from('campaigns').select('*').eq('id', oldCampId).single();
-        if(!old) return null;
+        // B. Bulk Insert Queue (Chunked for Network Stability)
+        const queueItems = contactList.map(c => ({
+            campaign_id: camp.id,
+            number: c.number,
+            name: c.name,
+            status: 'pending'
+        }));
 
-        // Fetch new list (or use old queue? No, lists change. Must select list.)
-        // If newListId is null, we can't run. User must pick list in UI.
-        const { contacts } = await this.getListContent(newListId);
-        if(!contacts || !contacts.length) return null;
-
-        // Create New Campaign Record
-        const { data: newCamp } = await db.from('campaigns').insert([{
-            name: `${old.name} (Copy)`,
-            message: old.message,
-            total_count: contacts.length,
-            status: 'ready',
-            media_data: old.media_data, // Copy media
-            media_mime: old.media_mime
-        }]).select().single();
-
-        await this._fillQueue(newCamp.id, contacts);
-        return newCamp.id;
-    },
-
-    // Helper to fill queue
-    async _fillQueue(campId, contacts) {
-        const queueItems = contacts.map(c => ({ campaign_id: campId, number: c.number, name: c.name, status: 'pending' }));
-        const chunkSize = 1000;
+        const chunkSize = 500; // Smaller chunks for reliability
         for (let i = 0; i < queueItems.length; i += chunkSize) {
             await db.from('queue').insert(queueItems.slice(i, i + chunkSize));
         }
+
+        return camp.id;
     },
 
-    // 3. Get Data for Dashboard
-    async getCampaigns() {
-        const { data } = await db.from('campaigns').select('*').order('created_at', { ascending: false }).limit(50);
+    // Fetch History for Dashboard/Campaign Tab
+    async getCampaignHistory() {
+        const { data } = await db.from('campaigns')
+            .select('id, name, status, sent_count, failed_count, total_count, created_at, message, media_mime')
+            .order('created_at', { ascending: false })
+            .limit(10);
         return data || [];
     },
 
-    async getCampaignDetails(id) {
+    // Fetch Full Details for "Reuse" functionality
+    async getCampaignForReuse(id) {
         const { data } = await db.from('campaigns').select('*').eq('id', id).single();
         return data;
     },
 
-    // 4. Engine Fetchers
-    async fetchNextJob(campaignId) {
-        const { data } = await db.from('queue').select('*').eq('campaign_id', campaignId).eq('status', 'pending').limit(1).maybeSingle();
-        return data;
-    },
+    // --- 3. ENGINE EXECUTION (Row-by-Row) ---
     
-    // NEW: Queue Preview for UI
-    async getQueuePreview(campaignId) {
-        const { data } = await db.from('queue').select('name, number').eq('campaign_id', campaignId).eq('status', 'pending').limit(3);
-        return data || [];
+    async fetchNextJob(campaignId) {
+        const { data } = await db.from('queue')
+            .select('*')
+            .eq('campaign_id', campaignId)
+            .eq('status', 'pending')
+            .limit(1)
+            .maybeSingle();
+        return data;
     },
 
     async completeJob(id, status) {
         await db.from('queue').update({ status: status, updated_at: new Date() }).eq('id', id);
     },
 
-    async updateStats(campId, isSuccess) {
+    async updateStats(campId, type) {
+        // Atomic increment using RPC would be better, but read-update-write works for single-agent
         const { data } = await db.from('campaigns').select('sent_count, failed_count').eq('id', campId).single();
-        const update = isSuccess ? { sent_count: data.sent_count + 1 } : { failed_count: data.failed_count + 1 };
+        const update = type === 'sent' ? { sent_count: data.sent_count + 1 } : { failed_count: data.failed_count + 1 };
         await db.from('campaigns').update(update).eq('id', campId);
     }
 };
