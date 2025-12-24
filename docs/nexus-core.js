@@ -1,43 +1,43 @@
 /**
- * NEXUS CORE v2.3 | Enterprise Data Layer
- * Handles Supabase, Logic, and File Processing
+ * NEXUS CORE v2.4 | Fixed Update Logic
+ * Handles Supabase Data & Business Logic
  */
 
-// --- CONFIGURATION ---
 const CONFIG = {
     API_BASE: "https://mkwhatsapp.onrender.com",
-    // ⚠️ REPLACE WITH YOUR SUPABASE KEYS
-    SUPABASE_URL: "https://upvprcemxefhviwptqnb.supabase.co",
-    SUPABASE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwdnByY2VteGVmaHZpd3B0cW5iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NTY5MzQsImV4cCI6MjA4MjEzMjkzNH0.yhaJUoNjflw0_cgjuk6HCFA7XIUiWTaG7tZBM4CfCGk" 
+    // ⚠️ PASTE YOUR SUPABASE KEYS HERE
+    SUPABASE_URL: "https://YOUR-PROJECT.supabase.co",
+    SUPABASE_KEY: "YOUR-ANON-KEY" 
 };
 
-// Initialize Supabase
 const { createClient } = supabase;
 const db = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
 
-// --- 1. CLOUD DATA STORE ---
 const DataStore = {
-    // Fetch all lists with metadata
+    // 1. Get All Lists (Headers only)
     async getLists() {
-        const { data, error } = await db.from('lists').select('*').order('created_at', { ascending: false });
-        if (error) { console.error(error); return []; }
+        const { data, error } = await db.from('lists').select('id, name, contacts').order('created_at', { ascending: false });
+        if (error) return [];
         return data.map(i => ({ id: i.id, name: i.name, count: i.contacts ? i.contacts.length : 0 }));
     },
 
-    // Get full content of a specific list
+    // 2. Get Single List (Name + Contacts) - FIXED
     async getListContent(id) {
-        const { data } = await db.from('lists').select('contacts').eq('id', id).single();
-        return data ? data.contacts : [];
+        const { data } = await db.from('lists').select('name, contacts').eq('id', id).single();
+        // Return object with name to populate UI input
+        return data || { name: '', contacts: [] }; 
     },
 
-    // Upsert (Create or Update)
+    // 3. Save Logic (Smart Upsert)
     async saveList(name, contacts) {
-        // Check existence by name to allow "Overwriting" by name
+        // Check if list exists by Name
         const { data: existing } = await db.from('lists').select('id').eq('name', name).single();
         
         if (existing) {
-            await db.from('lists').update({ contacts, created_at: new Date() }).eq('id', existing.id);
+            // UPDATE existing
+            await db.from('lists').update({ contacts }).eq('id', existing.id);
         } else {
+            // INSERT new
             await db.from('lists').insert([{ name, contacts }]);
         }
         return true;
@@ -49,7 +49,6 @@ const DataStore = {
     }
 };
 
-// --- 2. API ADAPTER ---
 const Api = {
     async req(endpoint, body) {
         try {
@@ -61,15 +60,10 @@ const Api = {
     }
 };
 
-// --- 3. UTILITIES ---
 const CoreUtils = {
     async processFile(file) {
-        // HEIC Support
         if (file.name.toLowerCase().endsWith('.heic') && window.heic2any) {
-            try { 
-                const blob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.7 });
-                file = new File([Array.isArray(blob)?blob[0]:blob], file.name.replace(/\.heic$/i, ".jpg"), { type: "image/jpeg" });
-            } catch(e) { console.error("HEIC Error", e); }
+            try { file = await heic2any({ blob: file, toType: "image/jpeg" }); } catch(e){}
         }
         return new Promise(resolve => {
             const reader = new FileReader();
@@ -77,13 +71,16 @@ const CoreUtils = {
             reader.onload = () => resolve({ mimetype: file.type, data: reader.result.split(',')[1], filename: file.name });
         });
     },
-
-    exportCSV(name, data) {
-        const csvContent = "data:text/csv;charset=utf-8," + "Name,Number\n" + data.map(e => `${e.name},${e.number}`).join("\n");
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `${name}.csv`);
-        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    exportCSV(name, dataPromise) {
+        // Handles both direct data and promises (async fetching)
+        Promise.resolve(dataPromise).then(result => {
+            // If result has .contacts (from getListContent), use that. Otherwise assume result IS the array.
+            const data = result.contacts || result; 
+            const csvContent = "data:text/csv;charset=utf-8," + "Name,Number\n" + data.map(e => `${e.name},${e.number}`).join("\n");
+            const link = document.createElement("a");
+            link.setAttribute("href", encodeURI(csvContent));
+            link.setAttribute("download", `${name}.csv`);
+            document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        });
     }
 };
