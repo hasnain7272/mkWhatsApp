@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Nexus OS | Enterprise</title>
+    <title>Nexus OS | Command Center</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
@@ -18,8 +18,10 @@
         }
     </script>
     <style>
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none;  scrollbar-width: none; }
+        /* Custom Scrollbar for sleek look */
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
         .fade-in { animation: fadeIn 0.3s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     </style>
@@ -64,6 +66,7 @@
         </header>
 
         <div class="flex-1 overflow-y-auto p-4 md:p-6 relative no-scrollbar">
+            
             <div id="modal-qr" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 fade-in"><div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-sm text-center border border-slate-100"><canvas id="qr-canvas" class="mx-auto mb-4 border p-2 rounded-lg"></canvas><button onclick="document.getElementById('modal-qr').classList.add('hidden')" class="mt-4 px-6 py-2 bg-slate-100 font-bold text-xs rounded-lg">Close</button></div></div>
             <div id="modal-edit" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 fade-in"><div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-100 flex flex-col h-[500px]"><div class="flex justify-between mb-2"><h3 class="font-bold text-lg">Manual Entry</h3><button onclick="Database.closeEdit()" class="text-slate-400"><i data-lucide="x"></i></button></div><input type="hidden" id="edit-key-hidden"><textarea id="edit-area" class="flex-1 border rounded-lg p-4 text-xs font-mono resize-none mb-4"></textarea><button onclick="Database.saveEdit()" class="py-2 bg-brand-600 text-white rounded-lg font-bold text-xs">Save</button></div></div>
 
@@ -71,27 +74,21 @@
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="database" class="w-4 h-4 text-brand-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Cloud Lists</span></div><p id="stat-stored" class="text-3xl font-bold text-slate-800 tracking-tight">0</p></div>
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="send" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Lifetime Sent</span></div><p id="stat-sent" class="text-3xl font-bold text-slate-800 tracking-tight">0</p></div>
-                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">System</span></div><p class="text-3xl font-bold text-slate-800 tracking-tight">Online</p></div>
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">System</span></div><p class="text-3xl font-bold text-slate-800 tracking-tight">Active</p></div>
                 </div>
-                
                 <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/50"><h3 class="font-bold text-sm text-slate-700">Recent Activity Log</h3></div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left border-collapse">
-                            <thead><tr class="text-[10px] text-slate-400 uppercase border-b border-slate-100"><th class="px-6 py-3">Campaign</th><th class="px-6 py-3">Status</th><th class="px-6 py-3">Time</th></tr></thead>
-                            <tbody id="dash-history-body" class="text-xs text-slate-600"></tbody>
-                        </table>
-                    </div>
+                    <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center"><h3 class="font-bold text-sm text-slate-700">Recent Activity Log</h3><button onclick="Engine.renderDashboardHistory()" class="text-xs text-brand-600 font-bold hover:underline">Refresh</button></div>
+                    <div class="overflow-x-auto"><table class="w-full text-left border-collapse"><thead><tr class="text-[10px] text-slate-400 uppercase border-b border-slate-100"><th class="px-6 py-3">Campaign</th><th class="px-6 py-3">Status</th><th class="px-6 py-3">Time</th></tr></thead><tbody id="dash-history-body" class="text-xs text-slate-600"></tbody></table></div>
                 </div>
             </div>
 
             <div id="view-campaigns" class="hidden h-full flex flex-col md:flex-row gap-6 fade-in">
-                <div class="w-full md:w-[400px] flex flex-col gap-4 shrink-0">
+                <div class="w-full md:w-[380px] flex flex-col gap-4 shrink-0 h-fit">
                     <div class="bg-white border border-slate-200 p-5 rounded-xl shadow-sm flex-1 flex flex-col">
                         <div class="flex justify-between items-center mb-4"><h3 class="font-bold text-slate-800 text-sm">Composer</h3><button onclick="Engine.resetComposer()" class="text-[10px] text-slate-400 hover:text-red-500">Clear</button></div>
                         <input id="camp-name" class="w-full border rounded-lg p-2.5 text-xs outline-none mb-3 bg-slate-50 focus:bg-white" placeholder="Campaign Name...">
                         <select id="camp-list-selector" class="w-full border rounded-lg p-2.5 text-xs mb-3 bg-slate-50 outline-none"><option value="">Select Target List</option></select>
-                        <textarea id="camp-msg" class="flex-1 border rounded-lg p-3 text-xs mb-3 resize-none bg-slate-50 focus:bg-white outline-none" placeholder="Message content..."></textarea>
+                        <textarea id="camp-msg" class="flex-1 border rounded-lg p-3 text-xs mb-3 resize-none bg-slate-50 focus:bg-white outline-none min-h-[100px]" placeholder="Message content..."></textarea>
                         
                         <div id="media-preview-area" class="hidden mb-3 p-2 bg-slate-50 rounded border flex items-center justify-between">
                             <div class="flex items-center gap-2"><i data-lucide="image" class="w-4 h-4 text-brand-500"></i><span class="text-xs text-slate-600 truncate max-w-[150px]" id="media-name-display">File</span></div>
@@ -103,24 +100,28 @@
                     </div>
                 </div>
                 
-                <div class="flex-1 flex flex-col gap-4 overflow-hidden h-[600px] md:h-auto">
-                    <div class="bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden flex-1 shadow-sm relative">
-                        <div class="h-10 border-b flex items-center justify-between px-4 bg-slate-50">
+                <div class="flex-1 flex flex-col gap-4 overflow-hidden h-full">
+                    
+                    <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm shrink-0">
+                        <div class="flex justify-between items-center mb-2">
+                            <div><h3 class="font-bold text-sm text-slate-800" id="active-camp-name">No Active Job</h3><p class="text-[10px] text-slate-400" id="active-camp-stats">Waiting...</p></div>
+                            <button onclick="Engine.toggle()" id="btn-engine-toggle" class="text-[10px] font-bold px-4 py-2 rounded-lg bg-slate-100 text-slate-400 border transition-all" disabled>START</button>
+                        </div>
+                        <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden"><div id="camp-progress" class="h-full bg-emerald-500 w-0 transition-all duration-700"></div></div>
+                    </div>
+
+                    <div class="bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden flex-1 shadow-sm">
+                        <div class="h-10 border-b flex items-center justify-between px-4 bg-slate-50 shrink-0">
                             <span class="text-xs font-bold text-slate-500 uppercase">Campaign History</span>
                             <button onclick="Engine.renderCampaigns()" class="text-[10px] text-brand-600 hover:underline">Refresh</button>
                         </div>
-                        <div id="campaign-list" class="flex-1 overflow-y-auto p-2 space-y-1"></div>
+                        <div id="campaign-list" class="flex-1 overflow-y-auto p-2 space-y-1 bg-slate-50/30">
+                            </div>
                     </div>
 
-                    <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm h-[250px] flex flex-col">
-                        <div class="flex justify-between items-center mb-2">
-                            <div><h3 class="font-bold text-sm text-slate-800" id="active-camp-name">Idle</h3><p class="text-[10px] text-slate-400" id="active-camp-stats">Waiting...</p></div>
-                            <button onclick="Engine.toggle()" id="btn-engine-toggle" class="text-[10px] font-bold px-4 py-2 rounded-lg bg-slate-100 text-slate-400 border transition-all" disabled>START</button>
-                        </div>
-                        <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mb-2"><div id="camp-progress" class="h-full bg-emerald-500 w-0 transition-all"></div></div>
-                        <div id="console-logs" class="flex-1 bg-slate-900 rounded-lg p-2 font-mono text-[10px] text-slate-300 overflow-y-auto space-y-1">
-                            <div class="text-slate-500 italic">Console ready. Select a campaign to monitor.</div>
-                        </div>
+                    <div class="bg-slate-900 rounded-xl p-2 h-32 flex flex-col shadow-sm shrink-0">
+                        <div class="flex justify-between items-center mb-1 px-2"><span class="text-[10px] font-bold text-slate-400 uppercase">Live Logs</span><button onclick="document.getElementById('console-logs').innerHTML=''" class="text-[10px] text-slate-500 hover:text-white">Clear</button></div>
+                        <div id="console-logs" class="flex-1 overflow-y-auto font-mono text-[10px] text-green-400 px-2 space-y-1"></div>
                     </div>
                 </div>
             </div>
@@ -145,6 +146,7 @@
     <script>
         lucide.createIcons();
 
+        // UI HELPERS
         const UI = {
             toggleSidebar() { document.getElementById('sidebar').classList.toggle('-translate-x-full'); document.getElementById('mobile-overlay').classList.toggle('hidden'); },
             setContactTab(tab) {
@@ -242,13 +244,14 @@
         const Database = {
             async render() {
                 const grid = document.getElementById('contact-grid'); const sel = document.getElementById('camp-list-selector');
-                grid.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">Loading...</div>'; sel.innerHTML = '<option value="">Select Target List</option>';
+                grid.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">Loading Cloud Lists...</div>'; 
+                sel.innerHTML = '<option value="">Select Target List</option>';
                 const lists = await DataStore.getLists();
                 grid.innerHTML = '';
                 lists.forEach(l => {
                     const div = document.createElement('div');
                     div.className = "flex justify-between items-center p-3 bg-slate-50 border border-slate-200 rounded-lg hover:border-slate-300 transition-colors";
-                    div.innerHTML = `<div><p class="text-xs font-bold text-slate-700">${l.name}</p><p class="text-[10px] text-slate-400">${l.count} items</p></div><div class="flex gap-1"><button onclick="CoreUtils.exportCSV('${l.name}', DataStore.getListContent('${l.id}'))" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-green-600"><i data-lucide="download" class="w-3 h-3"></i></button><button onclick="ContactManager.loadToSelect('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-brand-600"><i data-lucide="check-square" class="w-3 h-3"></i></button><button onclick="Database.openEdit('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-blue-600"><i data-lucide="pencil" class="w-3 h-3"></i></button><button onclick="Database.delete('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-red-500"><i data-lucide="trash" class="w-3 h-3"></i></button></div>`;
+                    div.innerHTML = `<div><p class="text-xs font-bold text-slate-700">${l.name}</p><p class="text-[10px] text-slate-400">${l.count} items</p></div><div class="flex gap-1"><button onclick="CoreUtils.exportCSV('${l.name}', DataStore.getListContent('${l.id}'))" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-green-600" title="Export CSV"><i data-lucide="download" class="w-3 h-3"></i></button><button onclick="ContactManager.loadToSelect('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-brand-600" title="Select & Edit"><i data-lucide="check-square" class="w-3 h-3"></i></button><button onclick="Database.openEdit('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-blue-600"><i data-lucide="pencil" class="w-3 h-3"></i></button><button onclick="Database.delete('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-red-500"><i data-lucide="trash" class="w-3 h-3"></i></button></div>`;
                     grid.appendChild(div);
                     const opt = document.createElement('option'); opt.value = l.id; opt.innerText = `${l.name} (${l.count})`; sel.appendChild(opt);
                 });
@@ -278,13 +281,12 @@
             clearMedia() { State.activeFile = null; document.getElementById('camp-file').value = ''; UI.updateMediaUI(); },
             resetComposer() { document.getElementById('camp-name').value=''; document.getElementById('camp-msg').value=''; this.clearMedia(); },
             
-            // 1. CREATE
+            // 1. Create
             async create() {
                 const name = document.getElementById('camp-name').value || `Campaign ${new Date().toLocaleTimeString()}`;
                 const msg = document.getElementById('camp-msg').value;
                 const listId = document.getElementById('camp-list-selector').value;
                 if(!listId) return Utils.toast("Select a List!", "error");
-                
                 UI.log(`Initializing Cloud Job...`, 'info');
                 const { contacts } = await DataStore.getListContent(listId);
                 const campId = await DataStore.createCampaign(name, msg, contacts, State.activeFile);
@@ -295,19 +297,18 @@
                 }
             },
 
-            // 2. REUSE
+            // 2. Reuse / Clone
             async reuse(id) {
                 if(!confirm("Load template into composer?")) return;
                 const camp = await DataStore.getCampaignDetails(id);
                 if(camp) {
                     document.getElementById('camp-name').value = `${camp.name} (Copy)`;
                     document.getElementById('camp-msg').value = camp.message;
-                    // Note: Media restore from DB to file input is complex, simple text copy for MVP
                     Utils.toast("Template Loaded", "success");
                 }
             },
 
-            // 3. MONITOR
+            // 3. Monitor
             async loadCampaign(id) {
                 State.activeCampId = id;
                 const campaigns = await DataStore.getCampaigns();
@@ -318,37 +319,65 @@
                     const pct = (camp.sent_count / camp.total_count) * 100;
                     document.getElementById('camp-progress').style.width = `${pct}%`;
                 }
-                document.getElementById('btn-engine-toggle').disabled = false;
-                document.getElementById('btn-engine-toggle').className = "text-[10px] font-bold px-4 py-2 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-all border border-emerald-200";
+                const btn = document.getElementById('btn-engine-toggle');
+                btn.disabled = false;
+                btn.className = "text-[10px] font-bold px-4 py-2 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-all border border-emerald-200";
+                
+                // Also highlight in list
+                this.renderCampaigns(); 
             },
 
-            // 4. HISTORY UI
+            // 4. Render History List
             async renderCampaigns() {
                 const list = document.getElementById('campaign-list');
                 const dashList = document.getElementById('dash-history-body');
                 const campaigns = await DataStore.getCampaigns();
-                list.innerHTML = ''; dashList.innerHTML = '';
+                if(list) list.innerHTML = ''; 
+                if(dashList) dashList.innerHTML = '';
                 
                 campaigns.forEach(c => {
                     const pct = Math.round((c.sent_count / c.total_count) * 100) || 0;
-                    // Side List
-                    list.innerHTML += `<div class="p-3 border-b border-slate-50 cursor-pointer hover:bg-slate-50 ${State.activeCampId===c.id?'bg-blue-50':''}" onclick="Engine.loadCampaign('${c.id}')"><div class="flex justify-between font-bold text-[11px] text-slate-700"><span>${c.name}</span><span class="${c.status==='completed'?'text-emerald-500':'text-amber-500'} uppercase">${c.status}</span></div><div class="flex justify-between mt-1"><span class="text-[10px] text-slate-400">Progress: ${pct}%</span><button onclick="event.stopPropagation(); Engine.reuse('${c.id}')" class="text-[9px] text-brand-600 font-bold hover:underline">REUSE</button></div></div>`;
+                    // Side List Item
+                    if(list) {
+                        list.innerHTML += `
+                        <div class="p-3 border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors ${State.activeCampId===c.id?'bg-brand-50 border-l-4 border-l-brand-500':''}" onclick="Engine.loadCampaign('${c.id}')">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="font-bold text-xs text-slate-700 truncate max-w-[120px]">${c.name}</span>
+                                <span class="px-1.5 py-0.5 rounded text-[9px] font-bold ${c.status==='completed'?'bg-emerald-100 text-emerald-600':(c.status==='ready'?'bg-blue-100 text-blue-600':'bg-amber-100 text-amber-600')}">${c.status}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <div class="w-16 h-1 bg-slate-200 rounded-full overflow-hidden"><div class="h-full bg-slate-400" style="width:${pct}%"></div></div>
+                                <div class="flex gap-2">
+                                    <button onclick="event.stopPropagation(); Engine.reuse('${c.id}')" class="text-[10px] text-slate-400 hover:text-brand-600" title="Clone Template"><i data-lucide="copy" class="w-3 h-3"></i></button>
+                                    <button onclick="event.stopPropagation(); Engine.delete('${c.id}')" class="text-[10px] text-slate-400 hover:text-red-500" title="Delete"><i data-lucide="trash" class="w-3 h-3"></i></button>
+                                </div>
+                            </div>
+                        </div>`;
+                    }
                     
-                    // Dash List
-                    dashList.innerHTML += `<tr class="border-b border-slate-50 hover:bg-slate-50 transition-colors"><td class="px-6 py-3 font-bold">${c.name}</td><td class="px-6 py-3"><span class="px-2 py-1 rounded-full text-[10px] font-bold ${c.status==='completed'?'bg-emerald-100 text-emerald-600':(c.status==='ready'?'bg-blue-100 text-blue-600':'bg-amber-100 text-amber-600')}">${c.status.toUpperCase()}</span></td><td class="px-6 py-3">${pct}%</td><td class="px-6 py-3 text-right"><button onclick="Engine.delete('${c.id}')" class="text-xs text-red-500 font-bold hover:underline">Del</button></td></tr>`;
+                    // Dash List Item
+                    if(dashList) {
+                        dashList.innerHTML += `<tr class="border-b border-slate-50 hover:bg-slate-50 transition-colors"><td class="px-6 py-3 font-bold">${c.name}</td><td class="px-6 py-3"><span class="px-2 py-1 rounded-full text-[10px] font-bold ${c.status==='completed'?'bg-emerald-100 text-emerald-600':(c.status==='ready'?'bg-blue-100 text-blue-600':'bg-amber-100 text-amber-600')}">${c.status.toUpperCase()}</span></td><td class="px-6 py-3 text-xs">${new Date(c.created_at).toLocaleDateString()}</td></tr>`;
+                    }
                 });
+                lucide.createIcons();
             },
             
             async delete(id) { if(confirm("Delete Campaign & Logs?")) { await DataStore.deleteCampaign(id); this.renderCampaigns(); } },
 
-            // 5. RUN
             toggle() { State.isRunning = !State.isRunning; document.getElementById('btn-engine-toggle').innerText = State.isRunning ? "PAUSE" : "START"; document.getElementById('engine-status').innerText = State.isRunning ? "Running" : "Paused"; if(State.isRunning) this.process(); },
             
             async process() {
                 if(!State.isRunning || !State.activeCampId) return;
                 const item = await DataStore.fetchNextJob(State.activeCampId);
-                if(!item) { State.isRunning = false; document.getElementById('btn-engine-toggle').innerText = "DONE"; Utils.toast("Campaign Finished", "success"); return; }
                 
+                if(!item) {
+                    State.isRunning = false;
+                    document.getElementById('btn-engine-toggle').innerText = "DONE";
+                    Utils.toast("Campaign Finished", "success");
+                    return;
+                }
+
                 const camp = await DataStore.getCampaignDetails(State.activeCampId);
                 UI.log(`Sending to ${item.number}...`, 'info');
                 
@@ -372,7 +401,7 @@
         State.processedCount = localStorage.getItem('nexus_total_sent') || 0;
         document.getElementById('stat-sent').innerText = State.processedCount;
         
-        Session.renderBtn(); Database.render(); Session.check(); Engine.renderCampaigns();
+        Session.renderBtn(); Database.render(); Session.check(); Engine.renderCampaigns(); Engine.renderDashboardHistory();
         Settings.save('batch', 20); Settings.save('cool', 60);
     </script>
 </body>
