@@ -343,8 +343,19 @@
             toggle() { State.isRunning = !State.isRunning; document.getElementById('btn-engine-toggle').innerText = State.isRunning ? "PAUSE" : "START"; if(State.isRunning) this.loop(); },
             clear() { State.queue = []; State.activeCampaignId = null; document.getElementById('queue-count').innerText = 0; document.getElementById('active-camp-display').innerText = "Cleared"; Utils.toast("Cleared"); },
             
-            async loop() {
-                if(!State.isRunning || !State.queue.length) { State.isRunning = false; document.getElementById('btn-engine-toggle').innerText = "START"; return; }
+          async loop() {
+                if(!State.isRunning || !State.queue.length) { 
+                    // Queue Empty: Mark Complete in DB if we were running a campaign
+                    if(State.isRunning && State.activeCampaignId) {
+                         await DataStore.updateStatus(State.activeCampaignId, 'completed');
+                         Utils.toast("Campaign Completed", "success");
+                         State.activeCampaignId = null; 
+                         Engine.refreshCampaigns(); // Auto-update history UI
+                    }
+                    State.isRunning = false; 
+                    document.getElementById('btn-engine-toggle').innerText = "START"; 
+                    return; 
+                }
                 
                 const item = State.queue.shift(); 
                 document.getElementById('queue-count').innerText = State.queue.length;
@@ -357,13 +368,14 @@
                     log.innerHTML = `<div class="text-emerald-600 font-bold border-l-2 border-emerald-500 pl-2 text-[10px]">> SENT</div>` + log.innerHTML;
                     State.processedCount++; 
                     document.getElementById('stat-sent').innerText = State.processedCount;
-                    if(State.activeCampaignId) { await DataStore.incrementStats(State.activeCampaignId, 'sent'); }
+                    if(State.activeCampaignId) await DataStore.incrementStats(State.activeCampaignId, 'sent');
                 } catch(e) { 
                     log.innerHTML = `<div class="text-red-500 font-bold border-l-2 border-red-500 pl-2 text-[10px]">> FAIL</div>` + log.innerHTML; 
-                    if(State.activeCampaignId) { await DataStore.incrementStats(State.activeCampaignId, 'failed'); }
+                    if(State.activeCampaignId) await DataStore.incrementStats(State.activeCampaignId, 'failed');
                 }
                 
-                setTimeout(() => this.loop(), Math.random() * 2000 + 2000);
+                // Dynamic cool-down based on Settings
+                setTimeout(() => this.loop(), Math.random() * (State.settings.cool * 100) + 1000);
             },
 
             async refreshCampaigns() {
@@ -394,27 +406,37 @@
                 });
             },
 
-            loadFromHistory(idx) {
-                const camp = State.historyCache[idx];
-                if(!camp) return;
-
+            async loadFromHistory(idx) {
+                const lightweightData = State.historyCache[idx];
+                if(!lightweightData) return;
+        
+                Utils.toast("Fetching full campaign data...", "info");
+                const fullData = await DataStore.getCampaignFull(lightweightData.id);
+        
+                if(!fullData) return Utils.toast("Error loading data", "error");
+        
                 // Switch Tab
                 UI.setCampTab('launch');
                 
                 // Fill Inputs
-                document.getElementById('camp-name').value = `${camp.name} (Copy)`;
-                document.getElementById('camp-msg').value = camp.message || "";
+                document.getElementById('camp-name').value = `${fullData.name} (Rerun)`;
+                document.getElementById('camp-msg').value = fullData.message || "";
                 
-                // Handle Media (Visual only, actual file data isn't re-downloaded to inputs easily without URL)
-                if(camp.media_name) {
-                    document.getElementById('file-name').innerText = `${camp.media_name} (Re-attach needed)`;
-                    Utils.toast("Inputs filled. Please re-attach file if needed.", "info");
+                // Restore Media from DB Blob
+                if(fullData.media_data && fullData.media_name) {
+                    State.activeFile = {
+                        data: fullData.media_data,
+                        mimetype: fullData.media_mime,
+                        filename: fullData.media_name
+                    };
+                    document.getElementById('file-name').innerText = `${fullData.media_name} (Loaded from DB)`;
+                    document.getElementById('file-name').classList.add("text-emerald-600");
                 } else {
                     document.getElementById('file-name').innerText = "Attach File";
-                    document.getElementById('camp-file').value = "";
                     State.activeFile = null;
-                    Utils.toast("Template Loaded", "success");
                 }
+        
+                Utils.toast("Campaign & Media Loaded", "success");
             }
         };
 
