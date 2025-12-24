@@ -1,6 +1,6 @@
 /**
- * NEXUS CORE v2.4 | Fixed Update Logic
- * Handles Supabase Data & Business Logic
+ * NEXUS CORE v3.0 | Database-Driven Engine
+ * Persists state to Supabase for crash recovery.
  */
 
 const CONFIG = {
@@ -14,38 +14,84 @@ const { createClient } = supabase;
 const db = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
 
 const DataStore = {
-    // 1. Get All Lists (Headers only)
+    // --- LIST MANAGEMENT (Keep existing) ---
     async getLists() {
-        const { data, error } = await db.from('lists').select('id, name, contacts').order('created_at', { ascending: false });
-        if (error) return [];
-        return data.map(i => ({ id: i.id, name: i.name, count: i.contacts ? i.contacts.length : 0 }));
+        const { data } = await db.from('lists').select('id, name, contacts').order('created_at', { ascending: false });
+        return (data || []).map(i => ({ id: i.id, name: i.name, count: i.contacts ? i.contacts.length : 0 }));
     },
-
-    // 2. Get Single List (Name + Contacts) - FIXED
     async getListContent(id) {
         const { data } = await db.from('lists').select('name, contacts').eq('id', id).single();
-        // Return object with name to populate UI input
         return data || { name: '', contacts: [] }; 
     },
-
-    // 3. Save Logic (Smart Upsert)
     async saveList(name, contacts) {
-        // Check if list exists by Name
         const { data: existing } = await db.from('lists').select('id').eq('name', name).single();
+        if (existing) await db.from('lists').update({ contacts }).eq('id', existing.id);
+        else await db.from('lists').insert([{ name, contacts }]);
+    },
+    async deleteList(id) { await db.from('lists').delete().eq('id', id); },
+
+    // --- NEW: CAMPAIGN MANAGEMENT ---
+    
+    // 1. Create New Campaign (Offload RAM to DB)
+    async createCampaign(name, message, contactList) {
+        // A. Create Campaign Record
+        const { data: camp, error } = await db.from('campaigns').insert([{
+            name: name,
+            message: message,
+            total_count: contactList.length,
+            status: 'ready'
+        }]).select().single();
         
-        if (existing) {
-            // UPDATE existing
-            await db.from('lists').update({ contacts }).eq('id', existing.id);
-        } else {
-            // INSERT new
-            await db.from('lists').insert([{ name, contacts }]);
+        if(error) return null;
+
+        // B. Bulk Insert Queue Items (Efficiently)
+        const queueItems = contactList.map(c => ({
+            campaign_id: camp.id,
+            number: c.number,
+            name: c.name,
+            status: 'pending'
+        }));
+
+        // Insert in chunks of 1000 to prevent timeouts
+        const chunkSize = 1000;
+        for (let i = 0; i < queueItems.length; i += chunkSize) {
+            await db.from('queue').insert(queueItems.slice(i, i + chunkSize));
         }
-        return true;
+
+        return camp.id;
     },
 
-    async deleteList(id) {
-        await db.from('lists').delete().eq('id', id);
-        return true;
+    // 2. Fetch Recent Campaigns
+    async getCampaigns() {
+        const { data } = await db.from('campaigns').select('*').order('created_at', { ascending: false }).limit(20);
+        return data || [];
+    },
+
+    // 3. Get Next Batch (The "Fetcher")
+    async getPendingBatch(campaignId, size) {
+        const { data } = await db.from('queue')
+            .select('*')
+            .eq('campaign_id', campaignId)
+            .eq('status', 'pending')
+            .limit(size);
+        return data || [];
+    },
+
+    // 4. Update Status (The "Marker")
+    async markSent(ids, status = 'sent') {
+        if(ids.length === 0) return;
+        await db.from('queue').update({ status: status, updated_at: new Date() }).in('id', ids);
+    },
+
+    // 5. Update Campaign Stats
+    async updateCampaignStats(id, sent, failed) {
+        // Increment atomic counters (simplified for client-side)
+        // Note: For perfect accuracy we would use an RPC function, but this works for MVP
+        const { data } = await db.from('campaigns').select('sent_count, failed_count').eq('id', id).single();
+        await db.from('campaigns').update({ 
+            sent_count: data.sent_count + sent, 
+            failed_count: data.failed_count + failed 
+        }).eq('id', id);
     }
 };
 
@@ -72,9 +118,7 @@ const CoreUtils = {
         });
     },
     exportCSV(name, dataPromise) {
-        // Handles both direct data and promises (async fetching)
         Promise.resolve(dataPromise).then(result => {
-            // If result has .contacts (from getListContent), use that. Otherwise assume result IS the array.
             const data = result.contacts || result; 
             const csvContent = "data:text/csv;charset=utf-8," + "Name,Number\n" + data.map(e => `${e.name},${e.number}`).join("\n");
             const link = document.createElement("a");
