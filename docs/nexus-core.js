@@ -1,5 +1,5 @@
 /**
- * NEXUS CORE v4.2 | Logic Layer
+ * NEXUS CORE v5.0 | Stable Enterprise Engine
  */
 
 const CONFIG = {
@@ -23,7 +23,7 @@ const DataStore = {
         return data || { name: '', contacts: [] }; 
     },
     async saveList(name, contacts) {
-        const { data: existing } = await db.from('lists').select('id').eq('name', name).single();
+        const { data: existing } = await db.from('lists').select('id').eq('name', name).maybeSingle();
         if (existing) await db.from('lists').update({ contacts }).eq('id', existing.id);
         else await db.from('lists').insert([{ name, contacts }]);
     },
@@ -31,26 +31,33 @@ const DataStore = {
 
     // --- CAMPAIGNS ---
     async createCampaign(name, message, contactList, mediaFile) {
-        let mediaData = null, mediaMime = null;
-        if(mediaFile) { mediaData = mediaFile.data; mediaMime = mediaFile.mimetype; }
+        let mediaData = null, mediaMime = null, mediaName = null;
+        if(mediaFile) { 
+            mediaData = mediaFile.data; 
+            mediaMime = mediaFile.mimetype; 
+            mediaName = mediaFile.filename;
+        }
 
         const { data: camp, error } = await db.from('campaigns').insert([{
             name: name, message: message, total_count: contactList.length, status: 'ready',
-            media_data: mediaData, media_mime: mediaMime
+            media_data: mediaData, media_mime: mediaMime, media_name: mediaName
         }]).select().single();
         
-        if(error) return null;
+        if(error) { console.error(error); return null; }
 
+        // Chunk Insert
         const queueItems = contactList.map(c => ({ campaign_id: camp.id, number: c.number, name: c.name, status: 'pending' }));
-        // Bulk Insert Chunking
-        for (let i = 0; i < queueItems.length; i += 1000) {
-            await db.from('queue').insert(queueItems.slice(i, i + 1000));
+        for (let i = 0; i < queueItems.length; i += 500) {
+            await db.from('queue').insert(queueItems.slice(i, i + 500));
         }
         return camp.id;
     },
 
     async getCampaigns() {
-        const { data } = await db.from('campaigns').select('id, name, status, sent_count, failed_count, total_count, created_at').order('created_at', { ascending: false });
+        const { data } = await db.from('campaigns')
+            .select('id, name, status, sent_count, failed_count, total_count, created_at')
+            .order('created_at', { ascending: false })
+            .limit(20);
         return data || [];
     },
     
@@ -72,8 +79,10 @@ const DataStore = {
         await db.from('queue').update({ status: status, updated_at: new Date() }).eq('id', id);
     },
     async updateStats(campId, isSuccess) {
+        // Read-Modify-Write (Simple implementation)
         const { data } = await db.from('campaigns').select('sent_count, failed_count').eq('id', campId).single();
-        const update = isSuccess ? { sent_count: data.sent_count + 1 } : { failed_count: data.failed_count + 1 };
+        if(!data) return;
+        const update = isSuccess ? { sent_count: (data.sent_count || 0) + 1 } : { failed_count: (data.failed_count || 0) + 1 };
         await db.from('campaigns').update(update).eq('id', campId);
     }
 };
