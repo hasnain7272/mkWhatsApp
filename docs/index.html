@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Nexus OS | Dynamic Core</title>
+    <title>Nexus OS | Dynamic Enterprise</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
@@ -18,22 +18,24 @@
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none;  scrollbar-width: none; }
         .fade-in { animation: fadeIn 0.2s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Mobile Sidebar Transition */
+        #sidebar { transition: transform 0.3s ease-in-out; }
+        .sidebar-open { transform: translateX(0) !important; }
+        .sidebar-closed { transform: translateX(-100%); }
+        @media (min-width: 768px) { .sidebar-closed { transform: translateX(0); } }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 h-screen w-full flex overflow-hidden selection:bg-brand-500 selection:text-white">
 
-    <div id="app" class="flex w-full h-full"></div>
+    <div id="app" class="flex w-full h-full relative"></div>
     <div id="toasts" class="absolute bottom-6 right-6 flex flex-col gap-2 pointer-events-none z-[100]"></div>
 
     <script>
-        // --- 1. CONFIGURATION ( The "DNA" of the App ) ---
+        // --- 1. CONFIG & STATE ---
         const CONFIG = {
             apiBase: "https://mkwhatsapp.onrender.com",
-            nodes: [
-                { id: 'client-1', label: 'NODE 1' },
-                { id: 'client-2', label: 'NODE 2' }
-            ],
             nav: [
                 { id: 'dashboard', label: 'Dashboard', icon: 'layout-grid' },
                 { id: 'campaigns', label: 'Campaigns', icon: 'megaphone' },
@@ -42,167 +44,180 @@
             ]
         };
 
-        // --- 2. REACTIVE STATE ENGINE ( The "Brain" ) ---
-        // This Proxy automatically updates the UI when data changes.
-        const handler = {
-            set(target, key, value) {
-                target[key] = value;
-                // Specific Reactivity Hooks
-                if (key === 'route') Render.view();
-                if (key === 'user') { Render.sidebar(); Session.check(); }
-                if (key === 'queue' || key === 'processedCount') Render.header(); // Auto-update counters
-                return true;
-            }
-        };
-
+        // The Reactive State
         const State = new Proxy({
             user: 'client-1',
             route: 'dashboard',
             status: 'OFFLINE',
+            qr: null,
             queue: [],
             processedCount: 0,
             allContacts: [],
             selection: new Set(),
             settings: { batch: 20, cool: 60 },
-            activeFile: null
-        }, handler);
+            sidebarOpen: false
+        }, {
+            set(target, key, value) {
+                target[key] = value;
+                if (key === 'route') { UI.renderView(); UI.toggleSidebar(false); }
+                if (key === 'user') { UI.renderSidebar(); Logic.checkSession(); }
+                if (key === 'status' || key === 'qr') UI.renderSidebar(); 
+                if (key === 'queue') UI.updateHeader();
+                if (key === 'sidebarOpen') {
+                    const sb = document.getElementById('sidebar');
+                    const ov = document.getElementById('mobile-overlay');
+                    if(value) { sb.classList.add('sidebar-open'); ov.classList.remove('hidden'); }
+                    else { sb.classList.remove('sidebar-open'); ov.classList.add('hidden'); }
+                }
+                return true;
+            }
+        });
 
-        // --- 3. VIRTUAL DOM HELPER ( The "Builder" ) ---
-        // Generates secure HTML elements dynamically
+        // --- 2. VIRTUAL DOM BUILDER (The "React" replacement) ---
         const h = (tag, classes, content, props = {}) => {
             const el = document.createElement(tag);
             if (classes) el.className = classes;
             if (content) {
-                if (Array.isArray(content)) content.forEach(c => el.appendChild(c));
-                else if (content instanceof HTMLElement) el.appendChild(content);
-                else el.textContent = content; // Secure text rendering
+                if (Array.isArray(content)) content.forEach(c => el.append(c));
+                else if (typeof content === 'string') el.textContent = content;
+                else el.append(content);
             }
             Object.entries(props).forEach(([k, v]) => {
                 if (k.startsWith('on')) el.addEventListener(k.substring(2).toLowerCase(), v);
-                else if (k === 'html') el.innerHTML = v; // Only use if strictly needed
+                else if (k === 'html') el.innerHTML = v;
+                else if (k === 'value') el.value = v; 
                 else el.setAttribute(k, v);
             });
             return el;
         };
 
-        // --- 4. RENDERER ( The "Painter" ) ---
-        const Render = {
+        // --- 3. UI RENDERER (The Views) ---
+        const UI = {
             init() {
                 const app = document.getElementById('app');
                 app.innerHTML = '';
-                // 1. Sidebar (Fixed)
-                app.appendChild(this.sidebarComponent());
-                // 2. Main Content Area
-                const main = h('main', 'flex-1 relative flex flex-col h-full overflow-hidden bg-white md:bg-slate-50/30 transition-all', [
-                    this.headerComponent(),
+                
+                // 1. Mobile Overlay
+                app.appendChild(h('div', 'fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 hidden transition-opacity', '', { 
+                    id: 'mobile-overlay', 
+                    onClick: () => State.sidebarOpen = false 
+                }));
+
+                // 2. Sidebar Container
+                app.appendChild(h('aside', 'fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 flex flex-col sidebar-closed shadow-2xl md:shadow-none h-full', [], { id: 'sidebar' }));
+                this.renderSidebar();
+
+                // 3. Main Content
+                const main = h('main', 'flex-1 relative flex flex-col h-full overflow-hidden bg-white md:bg-slate-50/30 md:ml-72 transition-all', [
+                    this.renderHeader(),
                     h('div', 'flex-1 overflow-y-auto p-4 md:p-6 relative no-scrollbar', [], { id: 'view-container' })
                 ]);
                 app.appendChild(main);
-                this.view(); // Render initial view
-            },
-
-            sidebarComponent() {
-                // Dynamic Node Buttons
-                const nodeButtons = CONFIG.nodes.map(n => 
-                    h('button', `py-2 text-[10px] font-bold rounded-lg border transition-all ${State.user === n.id ? 'border-brand-600 bg-brand-600 text-white shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`, n.label, {
-                        onClick: () => State.user = n.id
-                    })
-                );
-
-                // Dynamic Nav Items
-                const navItems = CONFIG.nav.map(n => 
-                    h('button', `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all ${State.route === n.id ? 'bg-brand-50 text-brand-600' : 'text-slate-500 hover:bg-slate-100'}`, [
-                        h('i', '', '', { 'data-lucide': n.icon, class: 'w-4 h-4' }),
-                        h('span', '', n.label)
-                    ], { onClick: () => State.route = n.id })
-                );
-
-                // Re-render Sidebar logic if it already exists (for updates)
-                const existing = document.getElementById('sidebar-content');
-                if(existing) { existing.replaceWith(this.sidebarInner(nodeButtons, navItems)); lucide.createIcons(); return; }
-
-                return h('aside', 'hidden md:flex w-72 bg-white border-r border-slate-200 flex-col z-50 shadow-2xl md:shadow-none', 
-                    this.sidebarInner(nodeButtons, navItems)
-                , { id: 'sidebar' });
-            },
-
-            sidebarInner(nodes, nav) {
-                return h('div', 'flex flex-col h-full', [
-                    h('div', 'h-16 flex items-center px-6 border-b border-slate-100 shrink-0', [
-                        h('div', 'w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3 shadow-lg', 
-                            h('i', '', '', { 'data-lucide': 'layers', class: 'w-5 h-5' })
-                        ),
-                        h('div', '', [
-                            h('h1', 'font-bold text-lg tracking-tight leading-none', 'Nexus OS'),
-                            h('span', 'text-[10px] font-bold text-slate-400 uppercase tracking-widest', 'Enterprise')
-                        ])
-                    ]),
-                    h('div', 'flex-1 p-4 overflow-y-auto space-y-6', [
-                        h('div', 'bg-slate-50 rounded-xl p-4 border border-slate-100', [
-                            h('div', 'flex justify-between mb-3', [
-                                h('span', 'text-[10px] uppercase font-bold text-slate-400 tracking-wider', 'Session Manager'),
-                                h('span', `w-2 h-2 rounded-full transition-colors duration-300 ${State.status === 'READY' ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 'bg-slate-300'}`, '', { id: 'conn-dot' })
-                            ]),
-                            h('div', 'grid grid-cols-2 gap-2 mb-3', nodes),
-                            h('div', '', [], { id: 'action-area' }) // Dynamic Action Area
-                        ]),
-                        h('nav', 'space-y-1', nav)
-                    ])
-                ], { id: 'sidebar-content' });
-            },
-
-            headerComponent() {
-                // Header auto-updates via reactive state, but we build the shell here
-                return h('header', 'h-16 px-4 md:px-8 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-30', [
-                    h('div', 'flex items-center gap-3', [
-                        h('h2', 'text-lg md:text-xl font-bold text-slate-800', State.route.charAt(0).toUpperCase() + State.route.slice(1), { id: 'page-title' })
-                    ]),
-                    h('div', 'px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600 shadow-sm flex items-center gap-2', [
-                        h('span', `w-2 h-2 rounded-full ${State.queue.length > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`, ''),
-                        h('span', '', `Queue: ${State.queue.length}`, { id: 'queue-badge' })
-                    ])
-                ], { id: 'app-header' });
-            },
-
-            // --- VIEW ROUTER ---
-            view() {
-                const container = document.getElementById('view-container');
-                container.innerHTML = ''; // Clear current view
                 
-                // Update Sidebar Highlights
-                this.sidebarComponent(); 
-                document.getElementById('page-title').textContent = State.route.charAt(0).toUpperCase() + State.route.slice(1);
-
-                // Inject View Content
-                let content;
-                switch(State.route) {
-                    case 'dashboard': content = this.viewDashboard(); break;
-                    case 'campaigns': content = this.viewCampaigns(); break;
-                    case 'contacts': content = this.viewContacts(); break;
-                    case 'settings': content = this.viewSettings(); break;
-                    default: content = h('div', '', '404 Not Found');
-                }
-                container.appendChild(content);
+                this.renderView();
                 lucide.createIcons();
             },
 
-            // --- HEADER RE-RENDERER (Optimized) ---
-            header() {
-                const badge = document.getElementById('queue-badge');
-                if(badge) badge.textContent = `Queue: ${State.queue.length}`;
+            toggleSidebar(force) {
+                State.sidebarOpen = force !== undefined ? force : !State.sidebarOpen;
             },
 
-            // --- DYNAMIC VIEWS GENERATORS ---
+            renderSidebar() {
+                const container = document.getElementById('sidebar');
+                if(!container) return;
+                container.innerHTML = '';
+
+                // Header
+                container.append(h('div', 'h-16 flex items-center px-6 border-b border-slate-100 shrink-0', [
+                    h('div', 'w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3', h('i', '', '', { 'data-lucide': 'layers', class: 'w-5 h-5' })),
+                    h('div', '', [h('h1', 'font-bold text-lg', 'Nexus OS'), h('span', 'text-[10px] font-bold text-slate-400 uppercase', 'Enterprise')])
+                ]));
+
+                // Controls
+                const content = h('div', 'flex-1 p-4 overflow-y-auto space-y-6', [
+                    // Node Switcher
+                    h('div', 'bg-slate-50 rounded-xl p-4 border border-slate-100', [
+                        h('div', 'flex justify-between mb-3 items-center', [
+                            h('span', 'text-[10px] uppercase font-bold text-slate-400', 'Active Session'),
+                            h('span', `w-2 h-2 rounded-full transition-colors ${State.status === 'READY' ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : (State.status==='INIT' ? 'bg-amber-500 animate-ping' : 'bg-slate-300')}`)
+                        ]),
+                        h('div', 'grid grid-cols-2 gap-2 mb-3', [
+                            h('button', `py-2 text-[10px] font-bold rounded-lg border transition-all ${State.user==='client-1' ? 'bg-brand-600 text-white' : 'bg-white text-slate-500'}`, 'NODE 1', { onClick: () => State.user = 'client-1' }),
+                            h('button', `py-2 text-[10px] font-bold rounded-lg border transition-all ${State.user==='client-2' ? 'bg-brand-600 text-white' : 'bg-white text-slate-500'}`, 'NODE 2', { onClick: () => State.user = 'client-2' })
+                        ]),
+                        this.renderActionArea()
+                    ]),
+                    // Navigation
+                    h('nav', 'space-y-1', CONFIG.nav.map(n => 
+                        h('button', `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all ${State.route === n.id ? 'bg-brand-50 text-brand-600' : 'text-slate-500 hover:bg-slate-100'}`, [
+                            h('i', '', '', { 'data-lucide': n.icon, class: 'w-4 h-4' }), n.label
+                        ], { onClick: () => State.route = n.id })
+                    ))
+                ]);
+                container.append(content);
+                lucide.createIcons();
+            },
+
+            renderActionArea() {
+                if (State.status === 'READY') {
+                    return h('button', 'w-full py-2 bg-red-50 text-red-600 text-xs font-bold rounded-lg hover:bg-red-100 transition-colors', 'Disconnect', { onClick: Logic.stop });
+                } else if (State.status === 'QR_READY') {
+                    // Inject QR Canvas Logic here or open modal
+                    setTimeout(() => { if(State.qr) new QRious({ element: document.getElementById('mini-qr'), value: State.qr, size: 100 }); }, 100);
+                    return h('div', 'text-center', [
+                        h('canvas', 'mx-auto border p-1 rounded bg-white', '', { id: 'mini-qr' }),
+                        h('p', 'text-[10px] text-slate-400 mt-1', 'Scan to Connect')
+                    ]);
+                } else if (State.status === 'INIT') {
+                    return h('div', 'text-center text-xs text-slate-400', 'Initializing...');
+                } else {
+                    return h('button', 'w-full py-2 bg-slate-800 text-white text-xs font-bold rounded-lg hover:bg-slate-900 transition-colors', 'Initialize', { onClick: Logic.start });
+                }
+            },
+
+            renderHeader() {
+                return h('header', 'h-16 px-4 md:px-8 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-30', [
+                    h('div', 'flex items-center gap-3', [
+                        h('button', 'md:hidden p-2 -ml-2 text-slate-600', h('i', '', '', { 'data-lucide': 'menu', class: 'w-5 h-5' }), { onClick: () => this.toggleSidebar() }),
+                        h('h2', 'text-lg md:text-xl font-bold text-slate-800', State.route.charAt(0).toUpperCase() + State.route.slice(1))
+                    ]),
+                    h('div', 'px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600 flex items-center gap-2', [
+                        h('span', 'w-2 h-2 rounded-full bg-slate-300', '', { id: 'header-dot' }),
+                        h('span', '', `Q: ${State.queue.length}`, { id: 'header-count' })
+                    ])
+                ]);
+            },
+
+            updateHeader() {
+                const el = document.getElementById('header-count');
+                const dot = document.getElementById('header-dot');
+                if(el) el.textContent = `Q: ${State.queue.length}`;
+                if(dot) dot.className = `w-2 h-2 rounded-full ${State.queue.length > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`;
+            },
+
+            renderView() {
+                const container = document.getElementById('view-container');
+                container.innerHTML = '';
+                
+                let view;
+                switch(State.route) {
+                    case 'dashboard': view = this.viewDashboard(); break;
+                    case 'campaigns': view = this.viewCampaigns(); break;
+                    case 'contacts': view = this.viewContacts(); break;
+                    case 'settings': view = this.viewSettings(); break;
+                }
+                container.append(view);
+                lucide.createIcons();
+            },
+
+            // --- VIEWS ---
+            
             viewDashboard() {
                 return h('div', 'max-w-6xl mx-auto space-y-6 fade-in', [
                     h('div', 'grid grid-cols-1 md:grid-cols-3 gap-4', [
-                        this.statCard('users', 'Global Contacts', State.allContacts.length),
-                        this.statCard('send', 'Total Sent', State.processedCount),
-                        this.statCard('shield', 'System Status', 'Active', 'text-amber-500')
-                    ]),
-                    h('div', 'bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden', [
-                        h('div', 'px-6 py-4 border-b border-slate-100 bg-slate-50/50', h('h3', 'font-bold text-sm text-slate-700', 'Recent Activity')),
-                        h('div', 'p-8 text-center text-xs text-slate-400 italic', 'System Ready.')
+                        this.statCard('users', 'Contacts', State.allContacts.length || 0),
+                        this.statCard('send', 'Messages Sent', State.processedCount),
+                        this.statCard('shield', 'System', 'Online', 'text-emerald-600')
                     ])
                 ]);
             },
@@ -212,35 +227,47 @@
                     h('div', 'w-full md:w-[400px] flex flex-col gap-4', [
                         h('div', 'bg-white border border-slate-200 p-5 rounded-xl shadow-sm flex-1', [
                             h('h3', 'font-bold text-slate-700 text-sm mb-4', 'Target Audience'),
-                            h('textarea', 'w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-mono outline-none focus:border-brand-500 h-32 mb-4', '', { id: 'camp-input', placeholder: 'Enter numbers...' }),
-                            h('input', 'w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs outline-none focus:border-brand-500', '', { id: 'camp-msg', placeholder: 'Message...' })
+                            h('select', 'w-full bg-slate-50 border border-slate-200 rounded px-2 py-2 text-xs outline-none mb-4', 
+                                [h('option', '', 'Select Saved List...'), ...this.getListOptions()], 
+                                { id: 'camp-selector', onChange: (e) => Logic.loadListToCamp(e.target.value) }
+                            ),
+                            h('textarea', 'w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-mono h-32 mb-4 resize-none', '', { id: 'camp-input', placeholder: 'Numbers...' }),
+                            h('input', 'w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs', '', { id: 'camp-msg', placeholder: 'Message...' })
                         ]),
-                        h('button', 'w-full py-3 bg-slate-800 text-white rounded-xl font-bold shadow-lg hover:bg-slate-900 transition-all flex justify-center gap-2', [
-                            h('i', '', '', { 'data-lucide': 'plus', class: 'w-4 h-4' }), ' Add to Queue'
-                        ], { onClick: Engine.queue })
+                        h('button', 'w-full py-3 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-900', 'Add to Queue', { onClick: Logic.queue })
                     ]),
-                    h('div', 'flex-1 bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden shadow-sm h-[400px]', [
-                        h('div', 'h-14 border-b border-slate-100 flex items-center justify-between px-5 bg-slate-50/50', [
+                    h('div', 'flex-1 bg-white border border-slate-200 rounded-xl flex flex-col h-[400px] md:h-auto', [
+                        h('div', 'h-14 border-b border-slate-100 flex items-center justify-between px-5', [
                             h('span', 'text-xs font-bold text-slate-500 uppercase', 'Dispatcher'),
-                            h('button', 'text-[10px] font-bold px-4 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200', 'START', { id: 'btn-engine-toggle', onClick: Engine.toggle })
+                            h('div', 'flex gap-2', [
+                                h('button', 'px-4 py-1.5 rounded bg-emerald-100 text-emerald-700 text-[10px] font-bold', 'START', { id: 'btn-toggle', onClick: Logic.toggleEngine }),
+                                h('button', 'px-4 py-1.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold', 'CLEAR', { onClick: Logic.clearQueue })
+                            ])
                         ]),
-                        h('div', 'flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs', [], { id: 'console-logs' })
+                        h('div', 'flex-1 p-4 overflow-y-auto font-mono text-xs', [], { id: 'console-logs' })
                     ])
                 ]);
             },
 
             viewContacts() {
                 return h('div', 'flex flex-col md:flex-row gap-6 h-full fade-in', [
-                    h('div', 'flex-1 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col overflow-hidden', [
+                    h('div', 'flex-1 bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden', [
                         h('div', 'p-3 border-b border-slate-100 flex gap-2', [
-                            h('button', 'px-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg', [
-                                h('i', '', '', { 'data-lucide': 'refresh-cw', class: 'w-4 h-4' })
-                            ], { onClick: ContactManager.sync })
+                            h('input', 'flex-1 bg-slate-50 border border-slate-200 rounded p-2 text-xs', '', { id: 'contact-search', placeholder: 'Search...', onKeyup: Logic.filterContacts }),
+                            h('button', 'px-3 bg-slate-100 rounded hover:bg-slate-200', h('i', '', '', { 'data-lucide': 'refresh-cw', class: 'w-4 h-4' }), { onClick: Logic.sync })
                         ]),
-                        h('div', 'flex-1 overflow-y-auto p-2', [], { id: 'contact-list-container' })
+                        h('div', 'flex-1 overflow-y-auto p-2', [], { id: 'contact-list' })
                     ]),
-                    h('div', 'hidden md:flex flex-col gap-4 w-[320px]', [
-                        h('div', 'bg-white p-4 rounded-xl border border-slate-200 shadow-sm', h('h3', 'font-bold text-slate-700 text-sm', 'Saved Lists'))
+                    h('div', 'w-full md:w-[320px] flex flex-col gap-4', [
+                        h('div', 'bg-white p-4 rounded-xl border border-slate-200', [
+                            h('h3', 'font-bold text-sm mb-2', 'Save Selection'),
+                            h('input', 'w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs mb-2', '', { id: 'list-name', placeholder: 'List Name...' }),
+                            h('button', 'w-full py-2 bg-brand-600 text-white rounded text-xs font-bold', 'Save', { onClick: Logic.saveList })
+                        ]),
+                        h('div', 'bg-white p-4 rounded-xl border border-slate-200 flex-1', [
+                            h('h3', 'font-bold text-sm mb-2', 'Saved Lists'),
+                            h('div', 'space-y-2 overflow-y-auto max-h-[200px]', this.getSavedListsUI())
+                        ])
                     ])
                 ]);
             },
@@ -248,107 +275,126 @@
             viewSettings() {
                 return h('div', 'max-w-xl mx-auto fade-in', [
                     h('div', 'bg-white p-8 rounded-xl border border-slate-200 shadow-sm', [
-                        h('h3', 'font-bold text-lg text-slate-800 mb-6', 'Configuration'),
-                        h('div', 'space-y-6', [
-                            this.rangeControl('Batch Size', 'batch', 5, 50),
-                            this.rangeControl('Cool-down (s)', 'cool', 10, 300)
+                        h('h3', 'font-bold text-lg mb-6', 'Configuration'),
+                        h('div', 'mb-4', [
+                            h('label', 'text-xs font-bold text-slate-500 block mb-2', 'Batch Size'),
+                            h('input', 'w-full accent-brand-600', '', { type: 'range', min: 5, max: 50, value: State.settings.batch, onInput: (e) => State.settings.batch = e.target.value })
                         ])
                     ])
                 ]);
             },
 
-            // --- COMPONENT HELPERS ---
-            statCard(icon, title, value, colorClass = 'text-brand-500') {
+            // Helpers
+            statCard(icon, label, val, color='text-brand-500') {
                 return h('div', 'bg-white p-6 rounded-xl border border-slate-200 shadow-sm', [
-                    h('div', 'flex items-center gap-3 mb-2', [
-                        h('i', '', '', { 'data-lucide': icon, class: `w-4 h-4 ${colorClass}` }),
-                        h('span', 'text-xs font-bold text-slate-400 uppercase', title)
-                    ]),
-                    h('p', 'text-3xl font-bold text-slate-800 tracking-tight', value)
+                    h('div', 'flex items-center gap-3 mb-2', [h('i', '', '', {'data-lucide': icon, class:`w-4 h-4 ${color}`}), h('span', 'text-xs font-bold text-slate-400 uppercase', label)]),
+                    h('p', 'text-3xl font-bold text-slate-800', val)
                 ]);
             },
-
-            rangeControl(label, key, min, max) {
-                return h('div', '', [
-                    h('div', 'flex justify-between mb-2', [
-                        h('label', 'text-xs font-bold text-slate-600', label),
-                        h('span', 'text-xs font-bold text-brand-600', State.settings[key], { id: `val-${key}` })
-                    ]),
-                    h('input', 'w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer', '', {
-                        type: 'range', min, max, value: State.settings[key],
-                        onInput: (e) => { State.settings[key] = e.target.value; document.getElementById(`val-${key}`).textContent = e.target.value; }
-                    })
-                ]);
+            getListOptions() {
+                const opts = [];
+                Object.keys(localStorage).forEach(k => { if(k.startsWith('nexus_list_')) opts.push(h('option', '', k.replace('nexus_list_', ''), {value: k})); });
+                return opts;
+            },
+            getSavedListsUI() {
+                const items = [];
+                Object.keys(localStorage).forEach(k => {
+                    if(k.startsWith('nexus_list_')) {
+                        items.push(h('div', 'flex justify-between items-center p-2 bg-slate-50 border border-slate-200 rounded', [
+                            h('span', 'text-xs font-bold', k.replace('nexus_list_', '')),
+                            h('button', 'text-slate-400 hover:text-red-500', h('i', '', '', {'data-lucide': 'trash', class: 'w-3 h-3'}), { onClick: () => { localStorage.removeItem(k); UI.renderView(); } })
+                        ]));
+                    }
+                });
+                return items;
             }
         };
 
-        // --- 5. LOGIC MODULES (The Muscles) ---
-        const Session = {
-            async check() {
-                // Logic remains same, but updates State.status proxy
-                try {
-                    const res = await fetch(`${CONFIG.apiBase}/api/status/${State.user}`);
-                    if(res.ok) {
-                        const data = await res.json();
-                        State.status = data.status;
-                        const area = document.getElementById('action-area');
-                        if(area) {
-                            if(State.status === 'READY') area.innerHTML = `<button class="w-full py-2 bg-red-50 text-red-600 text-xs font-bold rounded-lg" onclick="Session.stop()">Disconnect</button>`;
-                            else area.innerHTML = `<button class="w-full py-2 bg-slate-800 text-white text-xs font-bold rounded-lg" onclick="Session.start()">Initialize</button>`;
-                        }
-                    }
-                } catch(e) {}
+        // --- 4. BUSINESS LOGIC ---
+        const Logic = {
+            async api(path, body) { try { const r = await fetch(`${CONFIG.apiBase}/api/${path}`, body ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}:{}); return r.ok ? r.json() : null; } catch { return null; } },
+            
+            async checkSession() {
+                const res = await this.api(`status/${State.user}`);
+                if(res) { State.status = res.status; State.qr = res.qr; }
             },
-            async start() { await fetch(`${CONFIG.apiBase}/api/start`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id:State.user})}); this.check(); },
-            async stop() { await fetch(`${CONFIG.apiBase}/api/logout`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id:State.user})}); this.check(); }
-        };
+            start() { this.api('start', {id:State.user}).then(() => setTimeout(() => this.checkSession(), 2000)); State.status='INIT'; },
+            stop() { this.api('logout', {id:State.user}); State.status='OFFLINE'; },
 
-        const ContactManager = {
+            // Contact Logic
             async sync() {
-                const res = await fetch(`${CONFIG.apiBase}/api/contacts/${State.user}`, { method:'POST' });
-                const data = await res.json();
-                if(data && data.contacts) {
-                    State.allContacts = data.contacts;
-                    this.renderList();
+                const res = await this.api(`contacts/${State.user}`);
+                if(res && res.contacts) {
+                    State.allContacts = res.contacts;
+                    this.renderContactList(State.allContacts.slice(0, 100));
                 }
             },
-            renderList() {
-                const container = document.getElementById('contact-list-container');
-                if(!container) return;
-                container.innerHTML = '';
-                State.allContacts.slice(0, 100).forEach(c => {
-                    container.appendChild(h('div', 'p-2 border-b border-slate-100 text-xs text-slate-600', `${c.name} (${c.number})`));
+            renderContactList(list) {
+                const c = document.getElementById('contact-list'); if(!c) return; c.innerHTML = '';
+                list.forEach(contact => {
+                    c.append(h('div', `flex justify-between p-2 border-b border-slate-50 hover:bg-slate-50 cursor-pointer`, [
+                        h('span', 'text-xs font-bold', contact.name || contact.number),
+                        h('span', 'text-[10px] text-slate-400', contact.number)
+                    ], { onClick: (e) => {
+                        e.currentTarget.classList.toggle('bg-brand-50');
+                        if(State.selection.has(contact.number)) State.selection.delete(contact.number);
+                        else State.selection.add(contact.number);
+                    }}));
                 });
-            }
-        };
-
-        const Engine = {
-            toggle() { State.isRunning = !State.isRunning; document.getElementById('btn-engine-toggle').textContent = State.isRunning ? "PAUSE" : "START"; if(State.isRunning) this.process(); },
-            queue() { 
-                const raw = document.getElementById('camp-input').value; 
-                const nums = raw.match(/\d{10,}/g) || [];
-                nums.forEach(n => State.queue.push({ number: n }));
-                // Proxy auto-updates UI header
             },
-            async process() {
-                if(!State.isRunning || !State.queue.length) { State.isRunning = false; return; }
+            filterContacts(e) {
+                const q = e.target.value.toLowerCase();
+                const filtered = State.allContacts.filter(c => (c.name||'').toLowerCase().includes(q) || c.number.includes(q));
+                this.renderContactList(filtered.slice(0, 100));
+            },
+            saveList() {
+                const name = document.getElementById('list-name').value;
+                const data = [];
+                State.selection.forEach(n => data.push({ number: n })); // Simplified for now
+                localStorage.setItem(`nexus_list_${name}`, JSON.stringify(data));
+                UI.renderView(); // Refresh list UI
+            },
+
+            // Campaign Logic
+            loadListToCamp(key) {
+                if(!key) return;
+                const data = JSON.parse(localStorage.getItem(key));
+                document.getElementById('camp-input').value = data.map(i => i.number).join('\n');
+            },
+            queue() {
+                const raw = document.getElementById('camp-input').value;
+                const nums = raw.match(/\d{10,}/g) || [];
+                const msg = document.getElementById('camp-msg').value;
+                nums.forEach(n => State.queue.push({ number: n, msg: msg }));
+                State.queue = [...State.queue]; // Trigger Proxy
+            },
+            toggleEngine() {
+                State.isRunning = !State.isRunning;
+                document.getElementById('btn-toggle').textContent = State.isRunning ? "PAUSE" : "START";
+                if(State.isRunning) this.processQueue();
+            },
+            clearQueue() { State.queue = []; State.isRunning = false; },
+            async processQueue() {
+                if(!State.isRunning || !State.queue.length) { State.isRunning = false; document.getElementById('btn-toggle').textContent = "START"; return; }
                 const item = State.queue.shift();
-                document.getElementById('console-logs').prepend(h('div', 'text-slate-500', `> Sending to ${item.number}...`));
+                State.queue = [...State.queue]; // Trigger header update
                 
-                await fetch(`${CONFIG.apiBase}/api/send`, { 
-                    method: 'POST', 
-                    headers: {'Content-Type':'application/json'}, 
-                    body: JSON.stringify({ id: State.user, number: item.number, message: document.getElementById('camp-msg').value }) 
-                });
+                const log = document.getElementById('console-logs');
+                log.prepend(h('div', 'text-slate-500', `> Sending to ${item.number}...`));
                 
-                State.processedCount++; // Proxy auto-updates Stats
-                setTimeout(() => this.process(), 2000);
+                await this.api('send', { id: State.user, number: item.number, message: item.msg });
+                
+                log.prepend(h('div', 'text-emerald-600 font-bold', `> Sent.`));
+                State.processedCount++;
+                
+                setTimeout(() => this.processQueue(), 2000);
             }
         };
 
-        // --- 6. BOOTSTRAP ---
-        Render.init();
-        Session.check();
+        // --- 5. BOOTSTRAP ---
+        UI.init();
+        Logic.checkSession();
+        setInterval(() => Logic.checkSession(), 5000);
 
     </script>
 </body>
