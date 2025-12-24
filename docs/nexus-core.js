@@ -1,26 +1,24 @@
 /**
- * NEXUS CORE v5.0 | Stable Enterprise Engine
+ * NEXUS CORE v2.5 | Hybrid Architecture
+ * RAM Execution + DB Reporting
  */
 
 const CONFIG = {
     API_BASE: "https://mkwhatsapp.onrender.com",
-    // ⚠️ PASTE YOUR SUPABASE KEYS HERE
     SUPABASE_URL: "https://upvprcemxefhviwptqnb.supabase.co",
     SUPABASE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwdnByY2VteGVmaHZpd3B0cW5iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NTY5MzQsImV4cCI6MjA4MjEzMjkzNH0.yhaJUoNjflw0_cgjuk6HCFA7XIUiWTaG7tZBM4CfCGk" 
 };
 
-/**
- * NEXUS CORE v5.0 | Stable Enterprise Engine
- */
-
+// Initialize Supabase
 const { createClient } = supabase;
 const db = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
 
 const DataStore = {
-    // --- LISTS ---
+    // --- LISTS (Existing Logic) ---
     async getLists() {
-        const { data } = await db.from('lists').select('id, name, contacts').order('created_at', { ascending: false });
-        return (data || []).map(i => ({ id: i.id, name: i.name, count: i.contacts ? i.contacts.length : 0 }));
+        const { data, error } = await db.from('lists').select('id, name, contacts').order('created_at', { ascending: false });
+        if (error) return [];
+        return data.map(i => ({ id: i.id, name: i.name, count: i.contacts ? i.contacts.length : 0 }));
     },
     async getListContent(id) {
         const { data } = await db.from('lists').select('name, contacts').eq('id', id).single();
@@ -33,62 +31,41 @@ const DataStore = {
     },
     async deleteList(id) { await db.from('lists').delete().eq('id', id); },
 
-    // --- CAMPAIGNS ---
-    async createCampaign(name, message, contactList, mediaFile) {
-        let mediaData = null, mediaMime = null, mediaName = null;
-        if(mediaFile) { 
-            mediaData = mediaFile.data; 
-            mediaMime = mediaFile.mimetype; 
-            mediaName = mediaFile.filename;
-        }
-
-        const { data: camp, error } = await db.from('campaigns').insert([{
-            name: name, message: message, total_count: contactList.length, status: 'ready',
-            media_data: mediaData, media_mime: mediaMime, media_name: mediaName
+    // --- CAMPAIGNS (New Hybrid Logic) ---
+    async createCampaign(name, msg, total, mediaFile) {
+        let mData = null, mMime = null, mName = null;
+        if(mediaFile) { mData = mediaFile.data; mMime = mediaFile.mimetype; mName = mediaFile.filename; }
+        
+        const { data, error } = await db.from('campaigns').insert([{
+            name: name,
+            message: msg,
+            total_count: total,
+            sent_count: 0,
+            status: 'running',
+            media_data: mData,
+            media_mime: mMime,
+            media_name: mName
         }]).select().single();
         
-        if(error) { console.error(error); return null; }
+        if(error) { console.error("DB Error:", error); return null; }
+        return data.id;
+    },
 
-        // Chunk Insert
-        const queueItems = contactList.map(c => ({ campaign_id: camp.id, number: c.number, name: c.name, status: 'pending' }));
-        for (let i = 0; i < queueItems.length; i += 500) {
-            await db.from('queue').insert(queueItems.slice(i, i + 500));
+    // Light weight update - increments counters
+    async incrementStats(id, type) {
+        // We fetch first to increment accurately (Simple approach)
+        // Ideally we use an RPC function, but this is easier to deploy without SQL knowledge
+        const { data } = await db.from('campaigns').select(`${type}_count`).eq('id', id).single();
+        if(data) {
+            const update = {};
+            update[`${type}_count`] = data[`${type}_count`] + 1;
+            await db.from('campaigns').update(update).eq('id', id);
         }
-        return camp.id;
     },
 
     async getCampaigns() {
-        const { data } = await db.from('campaigns')
-            .select('id, name, status, sent_count, failed_count, total_count, created_at')
-            .order('created_at', { ascending: false })
-            .limit(20);
+        const { data } = await db.from('campaigns').select('*').order('created_at', { ascending: false }).limit(10);
         return data || [];
-    },
-    
-    // For Cloning/Reuse
-    async getCampaignDetails(id) {
-        const { data } = await db.from('campaigns').select('*').eq('id', id).single();
-        return data;
-    },
-
-    async deleteCampaign(id) {
-        await db.from('queue').delete().eq('campaign_id', id);
-        await db.from('campaigns').delete().eq('id', id);
-    },
-
-    // Engine Core
-    async fetchNextJob(campaignId) {
-        const { data } = await db.from('queue').select('*').eq('campaign_id', campaignId).eq('status', 'pending').limit(1).maybeSingle();
-        return data;
-    },
-    async completeJob(id, status) {
-        await db.from('queue').update({ status: status, updated_at: new Date() }).eq('id', id);
-    },
-    async updateStats(campId, isSuccess) {
-        const { data } = await db.from('campaigns').select('sent_count, failed_count').eq('id', campId).single();
-        if(!data) return;
-        const update = isSuccess ? { sent_count: (data.sent_count || 0) + 1 } : { failed_count: (data.failed_count || 0) + 1 };
-        await db.from('campaigns').update(update).eq('id', campId);
     }
 };
 
@@ -106,7 +83,7 @@ const Api = {
 const CoreUtils = {
     async processFile(file) {
         if (file.name.toLowerCase().endsWith('.heic') && window.heic2any) {
-            try { file = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.7 }); } catch(e){}
+            try { file = await heic2any({ blob: file, toType: "image/jpeg" }); } catch(e){}
         }
         return new Promise(resolve => {
             const reader = new FileReader();
