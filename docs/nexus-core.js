@@ -9,6 +9,10 @@ const CONFIG = {
     SUPABASE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwdnByY2VteGVmaHZpd3B0cW5iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NTY5MzQsImV4cCI6MjA4MjEzMjkzNH0.yhaJUoNjflw0_cgjuk6HCFA7XIUiWTaG7tZBM4CfCGk" 
 };
 
+/**
+ * NEXUS CORE v5.0 | Stable Enterprise Engine
+ */
+
 const { createClient } = supabase;
 const db = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
 
@@ -61,6 +65,7 @@ const DataStore = {
         return data || [];
     },
     
+    // For Cloning/Reuse
     async getCampaignDetails(id) {
         const { data } = await db.from('campaigns').select('*').eq('id', id).single();
         return data;
@@ -71,6 +76,7 @@ const DataStore = {
         await db.from('campaigns').delete().eq('id', id);
     },
 
+    // Engine Core
     async fetchNextJob(campaignId) {
         const { data } = await db.from('queue').select('*').eq('campaign_id', campaignId).eq('status', 'pending').limit(1).maybeSingle();
         return data;
@@ -79,7 +85,6 @@ const DataStore = {
         await db.from('queue').update({ status: status, updated_at: new Date() }).eq('id', id);
     },
     async updateStats(campId, isSuccess) {
-        // Read-Modify-Write (Simple implementation)
         const { data } = await db.from('campaigns').select('sent_count, failed_count').eq('id', campId).single();
         if(!data) return;
         const update = isSuccess ? { sent_count: (data.sent_count || 0) + 1 } : { failed_count: (data.failed_count || 0) + 1 };
