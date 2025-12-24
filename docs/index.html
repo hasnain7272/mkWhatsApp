@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Nexus OS | Command Center</title>
+    <title>Nexus OS | Enterprise SaaS</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
@@ -31,7 +31,7 @@
 
     <aside id="sidebar" class="fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 -translate-x-full md:translate-x-0 shadow-2xl md:shadow-none">
         <div class="h-16 flex items-center px-6 border-b border-slate-100 shrink-0">
-            <div class="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3 shadow-lg"><i data-lucide="layers" class="w-5 h-5"></i></div>
+            <div class="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-brand-500/30"><i data-lucide="layers" class="w-5 h-5"></i></div>
             <div><h1 class="font-bold text-lg tracking-tight">Nexus OS</h1><span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Enterprise</span></div>
             <button onclick="UI.toggleSidebar()" class="ml-auto md:hidden text-slate-400 p-2"><i data-lucide="x" class="w-5 h-5"></i></button>
         </div>
@@ -52,7 +52,7 @@
             </nav>
         </div>
         <div class="p-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
-            <div class="flex justify-between items-center mb-2"><span class="text-[10px] font-bold text-slate-500 uppercase">Status</span><span id="queue-mini" class="text-[10px] font-bold text-brand-600">IDLE</span></div>
+            <div class="flex justify-between items-center mb-2"><span class="text-[10px] font-bold text-slate-500 uppercase">Engine</span><span id="queue-mini" class="text-[10px] font-bold text-brand-600">IDLE</span></div>
             <div class="w-full bg-slate-200 h-1 rounded-full"><div id="global-progress" class="h-full bg-brand-600 w-0 transition-all"></div></div>
         </div>
     </aside>
@@ -80,7 +80,7 @@
                 <div class="w-full lg:w-[400px] flex flex-col gap-4 shrink-0 h-fit">
                     <div class="bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
                         <div class="flex justify-between items-center mb-6">
-                            <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2"><i data-lucide="pen-tool" class="w-4 h-4"></i> New Mission</h3>
+                            <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2"><i data-lucide="pen-tool" class="w-4 h-4"></i> New Campaign</h3>
                             <button onclick="Engine.resetComposer()" class="text-[10px] font-bold text-slate-400 hover:text-red-500">RESET</button>
                         </div>
                         
@@ -132,12 +132,12 @@
                             </div>
                         </div>
                         <div class="h-1 w-full bg-slate-800"><div id="camp-progress" class="h-full bg-emerald-500 w-0 transition-all duration-300"></div></div>
-                        <div id="console-logs" class="h-48 overflow-y-auto p-4 font-mono text-[11px] text-green-400 space-y-1"></div>
+                        <div id="console-logs" class="h-40 overflow-y-auto p-4 font-mono text-[11px] text-green-400 space-y-1"></div>
                     </div>
 
                     <div class="bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden flex-1 shadow-sm">
                         <div class="h-14 border-b border-slate-100 flex items-center justify-between px-6 bg-slate-50/50 shrink-0">
-                            <h3 class="font-bold text-sm text-slate-700">Mission Log</h3>
+                            <h3 class="font-bold text-sm text-slate-700">Campaign History</h3>
                             <button onclick="Engine.renderCampaignList()" class="p-2 hover:bg-slate-100 rounded-lg text-slate-400"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
                         </div>
                         <div id="campaign-list" class="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/30">
@@ -195,7 +195,7 @@
         const State = { user: 'client-1', status: 'OFFLINE', qr: null, activeCampId: null, activeFile: null, isRunning: false, processedCount: 0, settings: { batch: 20, cool: 60 }, allContacts: [], selection: new Set(), tempMemory: new Map() };
         const Utils = { toast: (msg, type='info') => { const c = document.getElementById('toasts'), el = document.createElement('div'); el.className = `${type === 'success' ? 'bg-emerald-600' : 'bg-slate-800'} text-white px-4 py-3 rounded-lg shadow-xl text-xs font-bold animate-bounce`; el.innerText = msg; c.appendChild(el); setTimeout(() => el.remove(), 3000); } };
 
-        // --- SESSION ---
+        // --- CORE MODULES ---
         const Session = {
             switch(id) { State.user = id; this.renderBtn(); this.check(); },
             renderBtn() { ['client-1','client-2'].forEach(id => { const btn = document.getElementById(id === 'client-1' ? 'btn-c1' : 'btn-c2'); if(State.user === id) { btn.className = "py-2 text-[10px] font-bold rounded-lg border border-brand-600 bg-brand-600 text-white shadow-md transition-all"; } else { btn.className = "py-2 text-[10px] font-bold rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-all"; } }); },
@@ -253,6 +253,17 @@
                 await DataStore.saveList(name, listData);
                 Utils.toast("Saved to Cloud", "success"); this.clearSelection(); Database.render();
             },
+            async loadToSelect(id) {
+                this.clearSelection();
+                const { name, contacts } = await DataStore.getListContent(id);
+                if(contacts) {
+                    contacts.forEach(i => { State.selection.add(i.number); State.tempMemory.set(i.number, i.name); });
+                    document.getElementById('sel-count').innerText = State.selection.size;
+                    document.getElementById('new-list-name').value = name;
+                    Utils.toast(`Loaded "${name}"`, "success");
+                    this.filter(); 
+                }
+            },
             clearSelection() { State.selection.clear(); document.getElementById('sel-count').innerText = 0; document.getElementById('new-list-name').value = ''; this.filter(); }
         };
 
@@ -296,13 +307,14 @@
             clearMedia() { State.activeFile = null; document.getElementById('camp-file').value = ''; UI.updateMediaUI(); },
             resetComposer() { document.getElementById('camp-name').value=''; document.getElementById('camp-msg').value=''; this.clearMedia(); },
             
-            // 1. Create
+            // 1. Create DB Campaign
             async create() {
                 const name = document.getElementById('camp-name').value || `Campaign ${new Date().toLocaleTimeString()}`;
                 const msg = document.getElementById('camp-msg').value;
                 const listId = document.getElementById('camp-list-selector').value;
                 if(!listId) return Utils.toast("Select a List!", "error");
-                UI.log(`Creating Cloud Job...`, 'info');
+                
+                UI.log(`Initializing Cloud Job...`, 'info');
                 const { contacts } = await DataStore.getListContent(listId);
                 const campId = await DataStore.createCampaign(name, msg, contacts, State.activeFile);
                 if(campId) {
@@ -312,13 +324,15 @@
                 }
             },
 
-            // 2. Reuse
+            // 2. Reuse / Clone
             async reuse(id) {
                 if(!confirm("Load template into composer?")) return;
                 const camp = await DataStore.getCampaignDetails(id);
                 if(camp) {
                     document.getElementById('camp-name').value = `${camp.name} (Copy)`;
                     document.getElementById('camp-msg').value = camp.message;
+                    // Media handling note: Reuse typically requires re-upload for browser security or pre-signed URLs
+                    // For MVP stability we reuse text content.
                     Utils.toast("Template Loaded", "success");
                 }
             },
@@ -333,15 +347,18 @@
                     document.getElementById('active-camp-stats').innerText = `${camp.sent_count}/${camp.total_count} Sent`;
                     const pct = (camp.sent_count / camp.total_count) * 100;
                     document.getElementById('camp-progress').style.width = `${pct}%`;
+                    document.getElementById('terminal-title').innerText = `MONITORING: ${camp.name.toUpperCase()}`;
+                    document.getElementById('terminal-stats').innerText = `${camp.sent_count} / ${camp.total_count}`;
                 }
                 const btn = document.getElementById('btn-engine-toggle');
                 btn.disabled = false;
-                btn.className = "text-[10px] font-bold px-4 py-2 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-all border border-emerald-200";
+                btn.className = "text-[10px] font-bold px-4 py-1.5 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200 transition-all";
                 
-                UI.showTerminal(true); // Auto-show terminal
+                UI.showTerminal(true);
                 this.renderCampaignList();
             },
 
+            // 4. Render History List
             async renderCampaignList() {
                 const list = document.getElementById('campaign-list');
                 const campaigns = await DataStore.getCampaigns();
@@ -349,17 +366,25 @@
                 
                 campaigns.forEach(c => {
                     const pct = Math.round((c.sent_count / c.total_count) * 100) || 0;
+                    
+                    // CARD DESIGN
                     list.innerHTML += `
                     <div class="p-4 border-b border-slate-50 cursor-pointer hover:bg-slate-50 transition-colors ${State.activeCampId===c.id?'bg-brand-50 border-l-4 border-l-brand-500':''}" onclick="Engine.loadCampaign('${c.id}')">
-                        <div class="flex justify-between items-center mb-2">
-                            <span class="font-bold text-xs text-slate-700 truncate max-w-[120px]">${c.name}</span>
+                        <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <h4 class="font-bold text-xs text-slate-700 truncate max-w-[150px]">${c.name}</h4>
+                                <span class="text-[9px] text-slate-400">${new Date(c.created_at).toLocaleDateString()}</span>
+                            </div>
                             <span class="px-2 py-0.5 rounded-full text-[9px] font-bold ${c.status==='completed'?'bg-emerald-100 text-emerald-600':(c.status==='ready'?'bg-blue-100 text-blue-600':'bg-amber-100 text-amber-600')} uppercase tracking-wide">${c.status}</span>
                         </div>
+                        <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mb-2">
+                            <div class="h-full bg-slate-400" style="width:${pct}%"></div>
+                        </div>
                         <div class="flex justify-between items-center">
-                            <div class="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden"><div class="h-full bg-slate-400" style="width:${pct}%"></div></div>
-                            <div class="flex gap-3">
-                                <button onclick="event.stopPropagation(); Engine.reuse('${c.id}')" class="text-[10px] text-slate-400 hover:text-brand-600 flex items-center gap-1 font-bold">REUSE</button>
-                                <button onclick="event.stopPropagation(); Engine.delete('${c.id}')" class="text-[10px] text-slate-400 hover:text-red-500"><i data-lucide="trash" class="w-3 h-3"></i></button>
+                            <span class="text-[10px] font-mono text-slate-500">${c.sent_count} / ${c.total_count}</span>
+                            <div class="flex gap-2">
+                                <button onclick="event.stopPropagation(); Engine.reuse('${c.id}')" class="text-[10px] font-bold text-slate-400 hover:text-brand-600 flex items-center gap-1">REUSE</button>
+                                <button onclick="event.stopPropagation(); Engine.delete('${c.id}')" class="text-slate-300 hover:text-red-500"><i data-lucide="trash" class="w-3 h-3"></i></button>
                             </div>
                         </div>
                     </div>`;
@@ -369,7 +394,7 @@
             
             async delete(id) { if(confirm("Delete Campaign & Logs?")) { await DataStore.deleteCampaign(id); this.renderCampaignList(); } },
 
-            toggle() { State.isRunning = !State.isRunning; document.getElementById('btn-engine-toggle').innerText = State.isRunning ? "PAUSE" : "START"; document.getElementById('engine-status').innerText = State.isRunning ? "Running" : "Paused"; if(State.isRunning) this.process(); },
+            toggle() { State.isRunning = !State.isRunning; document.getElementById('btn-engine-toggle').innerText = State.isRunning ? "PAUSE" : "START"; if(State.isRunning) this.process(); },
             
             async process() {
                 if(!State.isRunning || !State.activeCampId) return;
@@ -383,16 +408,15 @@
                 }
 
                 const camp = await DataStore.getCampaignDetails(State.activeCampId);
-                document.getElementById('terminal-title').innerText = `SENDING TO ${item.number}`;
-                document.getElementById('terminal-stats').innerText = `${camp.sent_count + 1} / ${camp.total_count}`;
+                UI.log(`Sending to ${item.number}...`, 'info');
                 
                 try {
                     await Api.req('send', { id: State.user, number: item.number, message: camp.message, file: camp.media_data ? { data: camp.media_data, mimetype: camp.media_mime, filename: 'file' } : null });
                     await DataStore.completeJob(item.id, 'sent'); await DataStore.updateStats(State.activeCampId, true);
-                    UI.log(`${item.name} (${item.number})`, 'sent');
+                    UI.log(`SENT: ${item.name}`, 'success');
                 } catch(e) {
                     await DataStore.completeJob(item.id, 'failed'); await DataStore.updateStats(State.activeCampId, false);
-                    UI.log(`${item.name} (${item.number})`, 'fail');
+                    UI.log(`FAIL: ${item.number}`, 'error');
                 }
                 this.loadCampaign(State.activeCampId);
                 setTimeout(() => this.process(), Math.random() * 2000 + 2000);
@@ -402,6 +426,10 @@
         const Router = { go(p) { document.querySelectorAll('[id^="view-"]').forEach(v => v.classList.add('hidden')); document.getElementById(`view-${p}`).classList.remove('hidden'); document.querySelectorAll('.nav-item').forEach(n => { n.classList.remove('bg-brand-50','text-brand-600'); n.classList.add('text-slate-500'); }); document.getElementById(`nav-${p}`).classList.add('bg-brand-50','text-brand-600'); document.getElementById('page-title').innerText = p.charAt(0).toUpperCase() + p.slice(1); document.getElementById('sidebar').classList.add('-translate-x-full'); document.getElementById('mobile-overlay').classList.add('hidden'); } };
         const Settings = { save(k,v) { State.settings[k]=v; document.getElementById(`val-${k}`).innerText = v; } };
 
+        // Init
+        State.processedCount = localStorage.getItem('nexus_total_sent') || 0;
+        document.getElementById('stat-sent').innerText = State.processedCount;
+        
         Session.renderBtn(); Database.render(); Session.check(); Engine.renderCampaignList();
         Settings.save('batch', 20); Settings.save('cool', 60);
     </script>
