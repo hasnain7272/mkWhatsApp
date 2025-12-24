@@ -1,6 +1,6 @@
 /**
- * NEXUS CORE v2.5 | Hybrid Architecture
- * RAM Execution + DB Reporting
+ * NEXUS CORE v2.6 | Hybrid Architecture with History
+ * RAM Execution + DB Reporting + Table Management
  */
 
 const CONFIG = {
@@ -14,7 +14,7 @@ const { createClient } = supabase;
 const db = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
 
 const DataStore = {
-    // --- LISTS (Existing Logic) ---
+    // --- LISTS ---
     async getLists() {
         const { data, error } = await db.from('lists').select('id, name, contacts').order('created_at', { ascending: false });
         if (error) return [];
@@ -31,7 +31,7 @@ const DataStore = {
     },
     async deleteList(id) { await db.from('lists').delete().eq('id', id); },
 
-    // --- CAMPAIGNS (New Hybrid Logic) ---
+    // --- CAMPAIGNS ---
     async createCampaign(name, msg, total, mediaFile) {
         let mData = null, mMime = null, mName = null;
         if(mediaFile) { mData = mediaFile.data; mMime = mediaFile.mimetype; mName = mediaFile.filename; }
@@ -51,10 +51,8 @@ const DataStore = {
         return data.id;
     },
 
-    // Light weight update - increments counters
     async incrementStats(id, type) {
-        // We fetch first to increment accurately (Simple approach)
-        // Ideally we use an RPC function, but this is easier to deploy without SQL knowledge
+        // Simple increment logic
         const { data } = await db.from('campaigns').select(`${type}_count`).eq('id', id).single();
         if(data) {
             const update = {};
@@ -64,7 +62,11 @@ const DataStore = {
     },
 
     async getCampaigns() {
-        const { data } = await db.from('campaigns').select('*').order('created_at', { ascending: false }).limit(10);
+        // Fetches meaningful rows for the History Table
+        const { data } = await db.from('campaigns')
+            .select('id, name, created_at, sent_count, total_count, status, message, media_name')
+            .order('created_at', { ascending: false })
+            .limit(20);
         return data || [];
     }
 };
