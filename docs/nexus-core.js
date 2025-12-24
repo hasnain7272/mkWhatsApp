@@ -68,13 +68,13 @@ const DataStore = {
             .order('created_at', { ascending: false })
             .limit(20);
         return data || [];
-    }
+    },
 
     async getCampaignFull(id) {
         // Fetches the heavy media data only on demand
         const { data } = await db.from('campaigns').select('*').eq('id', id).single();
         return data;
-    }
+    },
 
     async updateStatus(id, status) {
         await db.from('campaigns').update({ status }).eq('id', id);
