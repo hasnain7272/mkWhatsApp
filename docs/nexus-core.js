@@ -69,6 +69,17 @@ const DataStore = {
             .limit(20);
         return data || [];
     }
+
+    async getCampaignFull(id) {
+        // Fetches the heavy media data only on demand
+        const { data } = await db.from('campaigns').select('*').eq('id', id).single();
+        return data;
+    }
+
+    async updateStatus(id, status) {
+        await db.from('campaigns').update({ status }).eq('id', id);
+    }
+    
 };
 
 const Api = {
@@ -85,7 +96,7 @@ const Api = {
 const CoreUtils = {
     async processFile(file) {
         if (file.name.toLowerCase().endsWith('.heic') && window.heic2any) {
-            try { file = await heic2any({ blob: file, toType: "image/jpeg" }); } catch(e){}
+            try { file = await heic2any({ blob: file, toType: "image/jpeg", quality: 1.0 }); } catch(e){}
         }
         return new Promise(resolve => {
             const reader = new FileReader();
