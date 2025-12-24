@@ -1,52 +1,85 @@
 /**
- * NEXUS CORE v2.4 | Fixed Update Logic
- * Handles Supabase Data & Business Logic
+ * NEXUS CORE v2.6 | Hybrid Architecture with History
+ * RAM Execution + DB Reporting + Table Management
  */
 
 const CONFIG = {
     API_BASE: "https://mkwhatsapp.onrender.com",
-    // ⚠️ PASTE YOUR SUPABASE KEYS HERE
     SUPABASE_URL: "https://upvprcemxefhviwptqnb.supabase.co",
     SUPABASE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwdnByY2VteGVmaHZpd3B0cW5iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NTY5MzQsImV4cCI6MjA4MjEzMjkzNH0.yhaJUoNjflw0_cgjuk6HCFA7XIUiWTaG7tZBM4CfCGk" 
 };
 
+// Initialize Supabase
 const { createClient } = supabase;
 const db = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
 
 const DataStore = {
-    // 1. Get All Lists (Headers only)
+    // --- LISTS ---
     async getLists() {
         const { data, error } = await db.from('lists').select('id, name, contacts').order('created_at', { ascending: false });
         if (error) return [];
         return data.map(i => ({ id: i.id, name: i.name, count: i.contacts ? i.contacts.length : 0 }));
     },
-
-    // 2. Get Single List (Name + Contacts) - FIXED
     async getListContent(id) {
         const { data } = await db.from('lists').select('name, contacts').eq('id', id).single();
-        // Return object with name to populate UI input
         return data || { name: '', contacts: [] }; 
     },
-
-    // 3. Save Logic (Smart Upsert)
     async saveList(name, contacts) {
-        // Check if list exists by Name
-        const { data: existing } = await db.from('lists').select('id').eq('name', name).single();
+        const { data: existing } = await db.from('lists').select('id').eq('name', name).maybeSingle();
+        if (existing) await db.from('lists').update({ contacts }).eq('id', existing.id);
+        else await db.from('lists').insert([{ name, contacts }]);
+    },
+    async deleteList(id) { await db.from('lists').delete().eq('id', id); },
+
+    // --- CAMPAIGNS ---
+    async createCampaign(name, msg, total, mediaFile) {
+        let mData = null, mMime = null, mName = null;
+        if(mediaFile) { mData = mediaFile.data; mMime = mediaFile.mimetype; mName = mediaFile.filename; }
         
-        if (existing) {
-            // UPDATE existing
-            await db.from('lists').update({ contacts }).eq('id', existing.id);
-        } else {
-            // INSERT new
-            await db.from('lists').insert([{ name, contacts }]);
-        }
-        return true;
+        const { data, error } = await db.from('campaigns').insert([{
+            name: name,
+            message: msg,
+            total_count: total,
+            sent_count: 0,
+            status: 'running',
+            media_data: mData,
+            media_mime: mMime,
+            media_name: mName
+        }]).select().single();
+        
+        if(error) { console.error("DB Error:", error); return null; }
+        return data.id;
     },
 
-    async deleteList(id) {
-        await db.from('lists').delete().eq('id', id);
-        return true;
+    async incrementStats(id, type) {
+        // Simple increment logic
+        const { data } = await db.from('campaigns').select(`${type}_count`).eq('id', id).single();
+        if(data) {
+            const update = {};
+            update[`${type}_count`] = data[`${type}_count`] + 1;
+            await db.from('campaigns').update(update).eq('id', id);
+        }
+    },
+
+    async getCampaigns() {
+        // Fetches meaningful rows for the History Table
+        const { data } = await db.from('campaigns')
+            .select('id, name, created_at, sent_count, total_count, status, message, media_name')
+            .order('created_at', { ascending: false })
+            .limit(20);
+        return data || [];
+    },
+
+    async getCampaignFull(id) {
+        // Fetches the heavy media data only on demand
+        const { data } = await db.from('campaigns').select('*').eq('id', id).single();
+        return data;
+    },
+
+    async updateStatus(id, status) {
+        await db.from('campaigns').update({ status }).eq('id', id);
     }
+    
 };
 
 const Api = {
@@ -63,7 +96,7 @@ const Api = {
 const CoreUtils = {
     async processFile(file) {
         if (file.name.toLowerCase().endsWith('.heic') && window.heic2any) {
-            try { file = await heic2any({ blob: file, toType: "image/jpeg" }); } catch(e){}
+            try { file = await heic2any({ blob: file, toType: "image/jpeg", quality: 1.0 }); } catch(e){}
         }
         return new Promise(resolve => {
             const reader = new FileReader();
@@ -72,9 +105,7 @@ const CoreUtils = {
         });
     },
     exportCSV(name, dataPromise) {
-        // Handles both direct data and promises (async fetching)
         Promise.resolve(dataPromise).then(result => {
-            // If result has .contacts (from getListContent), use that. Otherwise assume result IS the array.
             const data = result.contacts || result; 
             const csvContent = "data:text/csv;charset=utf-8," + "Name,Number\n" + data.map(e => `${e.name},${e.number}`).join("\n");
             const link = document.createElement("a");
