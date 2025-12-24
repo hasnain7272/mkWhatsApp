@@ -1,6 +1,6 @@
 /**
- * NEXUS CORE v4.0 | Command Center Engine
- * Focused on Database-First Execution and Reusability
+ * NEXUS CORE v4.1 | Streamlined Logic
+ * Focus: Campaign as Templates, Clean Deletion, Low RAM
  */
 
 const CONFIG = {
@@ -14,7 +14,7 @@ const { createClient } = supabase;
 const db = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
 
 const DataStore = {
-    // --- 1. LISTS (Standard) ---
+    // --- LISTS ---
     async getLists() {
         const { data } = await db.from('lists').select('id, name, contacts').order('created_at', { ascending: false });
         return (data || []).map(i => ({ id: i.id, name: i.name, count: i.contacts ? i.contacts.length : 0 }));
@@ -30,14 +30,13 @@ const DataStore = {
     },
     async deleteList(id) { await db.from('lists').delete().eq('id', id); },
 
-    // --- 2. COMMAND CENTER (Campaigns) ---
+    // --- CAMPAIGNS ---
     
-    // Create & Offload to Cloud immediately (Low RAM)
+    // 1. Create
     async createCampaign(name, message, contactList, mediaFile) {
         let mediaData = null, mediaMime = null;
         if(mediaFile) { mediaData = mediaFile.data; mediaMime = mediaFile.mimetype; }
 
-        // A. Create Parent Record
         const { data: camp, error } = await db.from('campaigns').insert([{
             name: name, message: message, total_count: contactList.length, status: 'ready',
             media_data: mediaData, media_mime: mediaMime
@@ -45,57 +44,43 @@ const DataStore = {
         
         if(error) return null;
 
-        // B. Bulk Insert Queue (Chunked for Network Stability)
-        const queueItems = contactList.map(c => ({
-            campaign_id: camp.id,
-            number: c.number,
-            name: c.name,
-            status: 'pending'
-        }));
-
-        const chunkSize = 500; // Smaller chunks for reliability
-        for (let i = 0; i < queueItems.length; i += chunkSize) {
-            await db.from('queue').insert(queueItems.slice(i, i + chunkSize));
+        const queueItems = contactList.map(c => ({ campaign_id: camp.id, number: c.number, name: c.name, status: 'pending' }));
+        // Bulk insert in chunks
+        for (let i = 0; i < queueItems.length; i += 1000) {
+            await db.from('queue').insert(queueItems.slice(i, i + 1000));
         }
-
         return camp.id;
     },
 
-    // Fetch History for Dashboard/Campaign Tab
-    async getCampaignHistory() {
-        const { data } = await db.from('campaigns')
-            .select('id, name, status, sent_count, failed_count, total_count, created_at, message, media_mime')
-            .order('created_at', { ascending: false })
-            .limit(10);
+    // 2. Manage
+    async getCampaigns() {
+        const { data } = await db.from('campaigns').select('id, name, status, sent_count, failed_count, total_count, created_at').order('created_at', { ascending: false });
         return data || [];
     },
-
-    // Fetch Full Details for "Reuse" functionality
-    async getCampaignForReuse(id) {
+    
+    // Fetch full data (including media) for Reuse/Template loading
+    async getCampaignDetails(id) {
         const { data } = await db.from('campaigns').select('*').eq('id', id).single();
         return data;
     },
 
-    // --- 3. ENGINE EXECUTION (Row-by-Row) ---
-    
-    async fetchNextJob(campaignId) {
-        const { data } = await db.from('queue')
-            .select('*')
-            .eq('campaign_id', campaignId)
-            .eq('status', 'pending')
-            .limit(1)
-            .maybeSingle();
-        return data;
+    async deleteCampaign(id) {
+        // Cascade delete will handle queue if set up in SQL, but explicit delete is safe
+        await db.from('queue').delete().eq('campaign_id', id);
+        await db.from('campaigns').delete().eq('id', id);
     },
 
+    // 3. Execution
+    async fetchNextJob(campaignId) {
+        const { data } = await db.from('queue').select('*').eq('campaign_id', campaignId).eq('status', 'pending').limit(1).maybeSingle();
+        return data;
+    },
     async completeJob(id, status) {
         await db.from('queue').update({ status: status, updated_at: new Date() }).eq('id', id);
     },
-
-    async updateStats(campId, type) {
-        // Atomic increment using RPC would be better, but read-update-write works for single-agent
+    async updateStats(campId, isSuccess) {
         const { data } = await db.from('campaigns').select('sent_count, failed_count').eq('id', campId).single();
-        const update = type === 'sent' ? { sent_count: data.sent_count + 1 } : { failed_count: data.failed_count + 1 };
+        const update = isSuccess ? { sent_count: data.sent_count + 1 } : { failed_count: data.failed_count + 1 };
         await db.from('campaigns').update(update).eq('id', campId);
     }
 };
