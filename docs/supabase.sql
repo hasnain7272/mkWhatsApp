@@ -23,7 +23,10 @@ create table campaigns (
   status text default 'paused', -- 'running', 'completed', 'paused'
   total_count int default 0,
   sent_count int default 0,
-  failed_count int default 0
+  failed_count int default 0,
+  media_data text null,
+  media_mime text null,
+  media_name text null
 );
 
 -- 2. The Execution Queue (The heavy lifter)
