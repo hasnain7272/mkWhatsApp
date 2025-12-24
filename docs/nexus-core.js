@@ -6,8 +6,8 @@
 const CONFIG = {
     API_BASE: "https://mkwhatsapp.onrender.com",
     // ⚠️ PASTE YOUR SUPABASE KEYS HERE
-    SUPABASE_URL: "https://YOUR-PROJECT.supabase.co",
-    SUPABASE_KEY: "YOUR-ANON-KEY" 
+    SUPABASE_URL: "https://upvprcemxefhviwptqnb.supabase.co",
+    SUPABASE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwdnByY2VteGVmaHZpd3B0cW5iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NTY5MzQsImV4cCI6MjA4MjEzMjkzNH0.yhaJUoNjflw0_cgjuk6HCFA7XIUiWTaG7tZBM4CfCGk" 
 };
 
 const { createClient } = supabase;
