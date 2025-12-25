@@ -51,6 +51,43 @@ const DataStore = {
         return data.id;
     },
 
+    // NEW: Bulk insert into Queue Table (Persistence)
+    async addToQueue(campId, numbers) {
+        // Supabase allows bulk inserts. We map numbers to row objects.
+        const rows = numbers.map(n => ({ campaign_id: campId, number: n, status: 'pending' }));
+        // Insert in chunks of 500 to prevent packet size errors if list is huge
+        const chunkSize = 500;
+        for (let i = 0; i < rows.length; i += chunkSize) {
+            await db.from('campaign_queue').insert(rows.slice(i, i + chunkSize));
+        }
+    },
+
+    // NEW: Fetch a "Batch" of pending items
+    async getNextBatch(campId, size) {
+        const { data } = await db.from('campaign_queue')
+            .select('id, number')
+            .eq('campaign_id', campId)
+            .eq('status', 'pending')
+            .limit(size); // Respects the "Batch Size" setting
+        return data || [];
+    },
+
+    // NEW: Mark individual item as sent/failed
+    async updateQueueStatus(itemId, status) {
+        await db.from('campaign_queue').update({ status }).eq('id', itemId);
+    },
+
+    // NEW: Check for interrupted campaigns on boot
+    async getRunningCampaign() {
+        const { data } = await db.from('campaigns')
+            .select('*')
+            .eq('status', 'running')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+        return data;
+    },
+
     async incrementStats(id, type) {
         // Simple increment logic
         const { data } = await db.from('campaigns').select(`${type}_count`).eq('id', id).single();
