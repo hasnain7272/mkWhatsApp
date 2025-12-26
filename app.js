@@ -292,4 +292,18 @@ app.get('/api/get-members', async (req, res) => {
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/api/init', (req, res) => {
+    // Security Check: Ensure keys exist on server before sending
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+        return res.status(500).json({ error: 'Server Environment Not Configured' });
+    }
+
+    res.json({
+        SUPABASE_URL: process.env.SUPABASE_URL,
+        SUPABASE_KEY: process.env.SUPABASE_KEY,
+        // Optional: Send the API Base URL dynamically too
+        API_BASE: process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000'
+    });
+});
+
 app.listen(PORT, () => console.log(`🚀 Server running on Port ${PORT}`));
