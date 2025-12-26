@@ -44,10 +44,10 @@
         window.addEventListener('DOMContentLoaded', async () => {
             try {
                 // Fetch Dynamic Config from Backend
-                const _cfg = await fetch('/api/init').then(r => r.json());
+                const _cfg = await fetch('https://mkwhatsapp.onrender.com/api/init').then(r => r.json());
                 
                 // Init Global Config
-                window.CONFIG = { API_BASE: "https://mkwhatsapp.onrender.com", ..._cfg };
+                window.CONFIG = { API_BASE: "", ..._cfg };
                 
                 // Init Supabase
                 const { createClient } = supabase;
