@@ -4,107 +4,131 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Nexus OS | v3.2 Pro</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script> 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
     <script>
-        tailwind.config = { theme: { fontFamily: { sans: ['Inter', 'sans-serif'] }, extend: { colors: { brand: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' } } } } }
+        tailwind.config = { 
+            theme: { 
+                fontFamily: { sans: ['Inter', 'sans-serif'] }, 
+                extend: { 
+                    colors: { brand: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' } },
+                    animation: { 'fade-in': 'fadeIn 0.3s ease-in-out', 'spin-slow': 'spin 3s linear infinite' },
+                    keyframes: { fadeIn: { '0%': { opacity: '0', transform: 'translateY(5px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } } }
+                } 
+            } 
+        }
     </script>
-    <style>
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none;  scrollbar-width: none; }
-        .fade-in { animation: fadeIn 0.3s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        .loader { width: 12px; height: 12px; border: 2px solid #FFF; border-bottom-color: transparent; border-radius: 50%; display: inline-block; box-sizing: border-box; animation: rotation 1s linear infinite; }
-        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    </style>
 </head>
-<body class="bg-slate-50 text-slate-800 h-screen w-full flex overflow-hidden selection:bg-brand-500 selection:text-white">
+<body class="bg-slate-50 text-slate-800 h-screen w-full flex overflow-hidden selection:bg-brand-500 selection:text-white font-sans">
 
-    <div id="mobile-overlay" onclick="UI.toggleSidebar()" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 hidden md:hidden transition-opacity"></div>
+    <div id="mobile-overlay" onclick="UI.toggleSidebar()" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 hidden transition-opacity"></div>
     <div id="toasts" class="absolute bottom-6 right-6 flex flex-col gap-2 pointer-events-none z-[100]"></div>
+
+    <div id="modal-qr" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 animate-fade-in">
+        <div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-sm text-center border border-slate-100">
+            <canvas id="qr-canvas" class="mx-auto mb-4 border p-2 rounded-lg"></canvas>
+            <h3 class="font-bold text-lg text-slate-800">Scan Authentication</h3>
+            <button onclick="document.getElementById('modal-qr').classList.add('hidden')" class="mt-4 px-6 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">Close Window</button>
+        </div>
+    </div>
+
+    <div id="modal-edit" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 animate-fade-in">
+        <div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-100 flex flex-col h-[500px]">
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="font-bold text-lg text-slate-800">Manual Entry / Editor</h3>
+                <button onclick="Database.closeEdit()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <input type="hidden" id="edit-key-hidden">
+            <div class="text-[10px] text-slate-400 mb-2">Format: Number | Name (one per line)</div>
+            <textarea id="edit-area" class="flex-1 w-full bg-slate-50 border border-slate-200 rounded-lg p-4 text-xs font-mono outline-none focus:border-brand-500 resize-none mb-4" placeholder="919876543210 | John Doe"></textarea>
+            <button onclick="Database.saveEdit()" class="w-full py-2.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 transition-colors">Save Changes</button>
+        </div>
+    </div>
 
     <aside id="sidebar" class="fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 -translate-x-full md:translate-x-0 shadow-2xl md:shadow-none">
         <div class="h-16 flex items-center px-6 border-b border-slate-100 shrink-0">
             <div class="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-brand-500/30"><i data-lucide="layers" class="w-5 h-5"></i></div>
-            <div><h1 class="font-bold text-lg tracking-tight">Nexus OS</h1><span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">v3.2 Persistent</span></div>
+            <div><h1 class="font-bold text-lg tracking-tight">Nexus OS</h1><span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">v3.2 Stable</span></div>
             <button onclick="UI.toggleSidebar()" class="ml-auto md:hidden text-slate-400 p-2"><i data-lucide="x" class="w-5 h-5"></i></button>
         </div>
         <div class="flex-1 p-4 overflow-y-auto space-y-6">
             <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                <div class="flex items-center justify-between mb-3"><span class="text-[10px] uppercase font-bold text-slate-400">Session</span><span id="conn-dot" class="w-2 h-2 rounded-full bg-slate-300"></span></div>
+                <div class="flex items-center justify-between mb-3"><span class="text-[10px] uppercase font-bold text-slate-400">Session Node</span><span id="conn-dot" class="w-2 h-2 rounded-full bg-slate-300"></span></div>
                 <div class="grid grid-cols-2 gap-2 mb-3">
-                    <button onclick="Session.switch('client-1')" id="btn-c1" class="py-2 text-[10px] font-bold rounded-lg border">NODE 1</button>
-                    <button onclick="Session.switch('client-2')" id="btn-c2" class="py-2 text-[10px] font-bold rounded-lg border">NODE 2</button>
+                    <button onclick="Session.switch('client-1')" id="btn-client-1" class="py-2 text-[10px] font-bold rounded-lg border transition-all">NODE 1</button>
+                    <button onclick="Session.switch('client-2')" id="btn-client-2" class="py-2 text-[10px] font-bold rounded-lg border transition-all">NODE 2</button>
                 </div>
                 <div id="action-area"></div>
             </div>
+            
             <nav class="space-y-1">
-                <p class="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Menu</p>
-                <button onclick="Router.go('dashboard')" id="nav-dashboard" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="layout-grid" class="w-4 h-4"></i> Dashboard</button>
-                <button onclick="Router.go('campaigns')" id="nav-campaigns" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="megaphone" class="w-4 h-4"></i> Campaigns</button>
-                <button onclick="Router.go('contacts')" id="nav-contacts" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="book-user" class="w-4 h-4"></i> Contacts</button>
-                <button onclick="Router.go('settings')" id="nav-settings" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="settings" class="w-4 h-4"></i> Config</button>
+                <p class="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Application</p>
+                <button onclick="Router.go('dashboard')" id="nav-dashboard" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all text-slate-500 hover:bg-slate-50"><i data-lucide="layout-grid" class="w-4 h-4"></i> Dashboard</button>
+                <button onclick="Router.go('campaigns')" id="nav-campaigns" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all text-slate-500 hover:bg-slate-50"><i data-lucide="megaphone" class="w-4 h-4"></i> Campaigns</button>
+                <button onclick="Router.go('contacts')" id="nav-contacts" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all text-slate-500 hover:bg-slate-50"><i data-lucide="book-user" class="w-4 h-4"></i> Contacts</button>
+                <button onclick="Router.go('settings')" id="nav-settings" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all text-slate-500 hover:bg-slate-50"><i data-lucide="settings" class="w-4 h-4"></i> Config</button>
             </nav>
         </div>
+        
         <div class="p-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
             <div class="flex justify-between items-center mb-2"><span class="text-[10px] font-bold text-slate-500 uppercase">Engine Status</span><span id="queue-mini" class="text-[10px] font-bold text-brand-600">IDLE</span></div>
-            <div class="w-full bg-slate-200 h-1 rounded-full"><div id="global-progress" class="h-full bg-brand-600 w-0 transition-all"></div></div>
+            <div class="w-full bg-slate-200 h-1 rounded-full overflow-hidden"><div id="global-progress" class="h-full bg-brand-600 w-0 transition-all duration-500"></div></div>
         </div>
     </aside>
 
     <main class="flex-1 relative flex flex-col h-full overflow-hidden w-full bg-white md:bg-slate-50/30 md:ml-72 transition-all">
         <header class="h-16 px-4 md:px-8 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-30">
-            <div class="flex items-center gap-3"><button onclick="UI.toggleSidebar()" class="md:hidden p-2 -ml-2 text-slate-600"><i data-lucide="menu" class="w-5 h-5"></i></button><h2 id="page-title" class="text-lg md:text-xl font-bold text-slate-800">Dashboard</h2></div>
-            <div class="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600 shadow-sm flex items-center gap-2"><span id="status-light" class="w-2 h-2 rounded-full bg-slate-300"></span><span>Queue: <span id="queue-count" class="text-brand-600">0</span></span></div>
+            <div class="flex items-center gap-3">
+                <button onclick="UI.toggleSidebar()" class="md:hidden p-2 -ml-2 text-slate-600"><i data-lucide="menu" class="w-5 h-5"></i></button>
+                <h2 id="page-title" class="text-lg md:text-xl font-bold text-slate-800">Dashboard</h2>
+            </div>
+            <div class="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600 shadow-sm flex items-center gap-2">
+                <span id="status-light" class="w-2 h-2 rounded-full bg-slate-300"></span>
+                <span>Queue: <span id="queue-count" class="text-brand-600">0</span></span>
+            </div>
         </header>
 
-        <div class="flex-1 overflow-y-auto p-4 md:p-6 relative no-scrollbar">
+        <div class="flex-1 overflow-y-auto p-4 md:p-6 relative [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             
-            <div id="modal-qr" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 fade-in">
-                <div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-sm text-center border border-slate-100">
-                    <canvas id="qr-canvas" class="mx-auto mb-4 border p-2 rounded-lg"></canvas>
-                    <h3 class="font-bold text-lg text-slate-800">Scan QR Code</h3>
-                    <button onclick="document.getElementById('modal-qr').classList.add('hidden')" class="mt-4 px-6 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">Close</button>
-                </div>
-            </div>
-
-            <div id="modal-edit" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 fade-in">
-                <div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-100 flex flex-col h-[500px]">
-                    <div class="flex justify-between items-center mb-2"><h3 class="font-bold text-lg text-slate-800">Manual Entry</h3><button onclick="Database.closeEdit()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button></div>
-                    <input type="hidden" id="edit-key-hidden">
-                    <textarea id="edit-area" class="flex-1 w-full bg-slate-50 border border-slate-200 rounded-lg p-4 text-xs font-mono outline-none focus:border-brand-500 resize-none mb-4" placeholder="Enter contacts here..."></textarea>
-                    <button onclick="Database.saveEdit()" class="w-full py-2.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 transition-colors">Save Changes</button>
-                </div>
-            </div>
-
-            <div id="view-dashboard" class="max-w-6xl mx-auto space-y-6 fade-in">
+            <div id="view-dashboard" class="max-w-6xl mx-auto space-y-6 animate-fade-in">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="database" class="w-4 h-4 text-brand-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Cloud Lists</span></div><p id="stat-stored" class="text-3xl font-bold text-slate-800 tracking-tight">0</p></div>
-                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="send" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Session Sent</span></div><p id="stat-sent" class="text-3xl font-bold text-slate-800 tracking-tight">0</p></div>
-                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">System</span></div><p class="text-3xl font-bold text-slate-800 tracking-tight">V3.2 DB</p></div>
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm transition-hover hover:border-brand-200"><div class="flex items-center gap-3 mb-2"><i data-lucide="database" class="w-4 h-4 text-brand-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Cloud Lists</span></div><p id="stat-stored" class="text-3xl font-bold text-slate-800 tracking-tight">0</p></div>
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm transition-hover hover:border-emerald-200"><div class="flex items-center gap-3 mb-2"><i data-lucide="send" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Session Sent</span></div><p id="stat-sent" class="text-3xl font-bold text-slate-800 tracking-tight">0</p></div>
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm transition-hover hover:border-amber-200"><div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">System DB</span></div><p class="text-3xl font-bold text-slate-800 tracking-tight">V3.2</p></div>
                 </div>
             </div>
 
-            <div id="view-campaigns" class="hidden h-full flex flex-col fade-in">
-                
+            <div id="view-campaigns" class="hidden h-full flex flex-col animate-fade-in">
                 <div class="flex bg-slate-100 p-1 rounded-lg mb-6 shrink-0 md:max-w-sm">
                     <button onclick="UI.setCampTab('launch')" id="tab-camp-launch" class="flex-1 py-1.5 text-xs font-bold rounded-md bg-white shadow-sm text-slate-800 transition-all">New Campaign</button>
-                    <button onclick="UI.setCampTab('history')" id="tab-camp-history" class="flex-1 py-1.5 text-xs font-bold rounded-md text-slate-500 transition-all">History</button>
+                    <button onclick="UI.setCampTab('history')" id="tab-camp-history" class="flex-1 py-1.5 text-xs font-bold rounded-md text-slate-500 transition-all">DB History</button>
                 </div>
 
                 <div id="panel-camp-launch" class="flex-1 flex flex-col md:flex-row gap-6 h-full overflow-hidden">
-                    <div class="w-full md:w-[400px] flex flex-col gap-4 shrink-0 overflow-y-auto">
+                    <div class="w-full md:w-[400px] flex flex-col gap-4 shrink-0 overflow-y-auto pb-10">
                         <div class="bg-white border border-slate-200 p-5 rounded-xl shadow-sm flex-1 flex flex-col">
-                            <div class="mb-3"><label class="text-[10px] font-bold text-slate-400 uppercase">Campaign Name</label><input id="camp-name" type="text" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold" placeholder="e.g. September Offer"></div>
-                            <div class="flex justify-between items-center mb-2"><h3 class="font-bold text-slate-700 text-sm">Target Audience</h3><select id="camp-list-selector" onchange="Database.loadListToCamp(this.value)" class="text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1.5 outline-none font-medium text-slate-600 focus:border-brand-500"><option value="">Load Cloud List</option></select></div>
-                            <textarea id="camp-input" class="flex-1 w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-mono outline-none focus:border-brand-500 resize-none mb-4 min-h-[100px]" placeholder="Numbers..."></textarea>
+                            <div class="mb-3">
+                                <label class="text-[10px] font-bold text-slate-400 uppercase">Campaign Name</label>
+                                <input id="camp-name" type="text" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold mt-1" placeholder="e.g. September Offer">
+                            </div>
+                            <div class="flex justify-between items-center mb-2">
+                                <h3 class="font-bold text-slate-700 text-sm">Target Audience</h3>
+                                <select id="camp-list-selector" onchange="Database.loadListToCamp(this.value)" class="text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1.5 outline-none font-medium text-slate-600 focus:border-brand-500"><option value="">Load Cloud List</option></select>
+                            </div>
+                            <textarea id="camp-input" class="flex-1 w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-mono outline-none focus:border-brand-500 resize-none mb-4 min-h-[100px]" placeholder="Paste numbers here..."></textarea>
                             <div class="space-y-3">
                                 <input id="camp-msg" type="text" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs outline-none focus:border-brand-500" placeholder="Type message...">
-                                <div onclick="document.getElementById('camp-file').click()" class="border border-dashed border-slate-300 rounded-lg p-3 flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50"><i data-lucide="paperclip" class="w-4 h-4 text-slate-400"></i><span id="file-name" class="text-xs font-bold text-slate-500 truncate">Attach File</span><input type="file" id="camp-file" class="hidden" onchange="Engine.handleFile(this)"></div>
+                                <div onclick="document.getElementById('camp-file').click()" class="border border-dashed border-slate-300 rounded-lg p-3 flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 transition-colors">
+                                    <i data-lucide="paperclip" class="w-4 h-4 text-slate-400"></i>
+                                    <span id="file-name" class="text-xs font-bold text-slate-500 truncate">Attach File (Img/Video)</span>
+                                    <input type="file" id="camp-file" class="hidden" onchange="Engine.handleFile(this)">
+                                </div>
                             </div>
                             <button onclick="Engine.createAndQueue()" class="mt-4 w-full py-3 bg-slate-800 text-white rounded-xl font-bold shadow-lg hover:bg-slate-900 transition-all flex justify-center gap-2"><i data-lucide="rocket" class="w-4 h-4"></i> Create & Launch</button>
                         </div>
@@ -113,22 +137,24 @@
                     <div class="flex-1 bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden shadow-sm h-[400px] md:h-auto">
                         <div class="h-14 border-b border-slate-100 flex items-center justify-between px-5 bg-slate-50/50">
                             <div class="flex flex-col">
-                                <span class="text-xs font-bold text-slate-500 uppercase">Dispatcher</span>
+                                <span class="text-xs font-bold text-slate-500 uppercase">Dispatcher Console</span>
                                 <span id="active-camp-display" class="text-[10px] font-bold text-brand-600">No Active Database Campaign</span>
                             </div>
                             <div class="flex gap-2">
-                                <button onclick="Engine.toggle()" id="btn-engine-toggle" class="text-[10px] font-bold px-4 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200">START</button>
-                                <button onclick="Engine.clear()" class="text-[10px] font-bold px-4 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50">RESET</button>
+                                <button onclick="Engine.toggle()" id="btn-engine-toggle" class="text-[10px] font-bold px-4 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200 transition-colors">START</button>
+                                <button onclick="Engine.clear()" class="text-[10px] font-bold px-4 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">RESET</button>
                             </div>
                         </div>
-                        <div id="console-logs" class="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs bg-slate-50"><div class="text-center text-slate-400 mt-20 italic">System Ready.</div></div>
+                        <div id="console-logs" class="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs bg-slate-50 scroll-smooth">
+                            <div class="text-center text-slate-400 mt-20 italic">System Ready. Awaiting commands.</div>
+                        </div>
                     </div>
                 </div>
 
                 <div id="panel-camp-history" class="hidden flex-1 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
                     <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                         <h3 class="font-bold text-sm text-slate-700">Campaign History (DB)</h3>
-                        <button onclick="Engine.refreshCampaigns()" class="p-2 hover:bg-white rounded-lg text-slate-500 border border-transparent hover:border-slate-200"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+                        <button onclick="Engine.refreshCampaigns()" class="p-2 hover:bg-white rounded-lg text-slate-500 border border-transparent hover:border-slate-200 transition-all"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
                     </div>
                     <div class="flex-1 overflow-auto">
                         <table class="w-full text-left">
@@ -147,63 +173,455 @@
                 </div>
             </div>
 
-            <div id="view-contacts" class="hidden h-full flex flex-col fade-in">
-                <div class="flex md:hidden bg-slate-100 p-1 rounded-lg mb-4 shrink-0"><button onclick="UI.setContactTab('list')" id="tab-list" class="flex-1 py-1.5 text-xs font-bold rounded-md bg-white shadow-sm text-slate-800">Search</button><button onclick="UI.setContactTab('tools')" id="tab-tools" class="flex-1 py-1.5 text-xs font-bold rounded-md text-slate-500">Lists & Tools</button></div>
+            <div id="view-contacts" class="hidden h-full flex flex-col animate-fade-in">
+                <div class="flex md:hidden bg-slate-100 p-1 rounded-lg mb-4 shrink-0">
+                    <button onclick="UI.setContactTab('list')" id="tab-list" class="flex-1 py-1.5 text-xs font-bold rounded-md bg-white shadow-sm text-slate-800">Search</button>
+                    <button onclick="UI.setContactTab('tools')" id="tab-tools" class="flex-1 py-1.5 text-xs font-bold rounded-md text-slate-500">Lists & Tools</button>
+                </div>
+                
                 <div class="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
                     <div id="cont-panel-list" class="flex-1 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col overflow-hidden h-full">
-                        <div class="p-3 border-b border-slate-100 flex gap-2 shrink-0"><div class="relative flex-1"><i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-slate-400"></i><input type="text" id="contact-search" onkeyup="ContactManager.filter()" placeholder="Search..." class="pl-9 w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500"></div><button onclick="ContactManager.sync()" id="btn-sync" class="px-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button></div>
-                        <div class="px-4 py-2 bg-slate-50/80 border-b border-slate-100 flex justify-between shrink-0"><span class="text-[10px] font-bold text-slate-400 uppercase">Memory: <span id="count-all">0</span></span><span class="text-[10px] font-bold text-brand-600 uppercase">Selected: <span id="sel-count">0</span></span></div>
-                        <div id="contact-list-container" class="flex-1 overflow-y-auto p-2 space-y-1"><div class="text-center mt-20 text-slate-400 text-xs">Sync contacts to build Global Memory.</div></div>
+                        <div class="p-3 border-b border-slate-100 flex gap-2 shrink-0">
+                            <div class="relative flex-1">
+                                <i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-slate-400"></i>
+                                <input type="text" id="contact-search" onkeyup="ContactManager.filter()" placeholder="Search synced contacts..." class="pl-9 w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500 transition-colors">
+                            </div>
+                            <button onclick="ContactManager.sync()" id="btn-sync" class="px-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg transition-colors"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+                        </div>
+                        <div class="px-4 py-2 bg-slate-50/80 border-b border-slate-100 flex justify-between shrink-0">
+                            <span class="text-[10px] font-bold text-slate-400 uppercase">Total Memory: <span id="count-all">0</span></span>
+                            <span class="text-[10px] font-bold text-brand-600 uppercase">Selected: <span id="sel-count">0</span></span>
+                        </div>
+                        <div id="contact-list-container" class="flex-1 overflow-y-auto p-2 space-y-1">
+                            <div class="text-center mt-20 text-slate-400 text-xs">Sync contacts to build Global Memory.</div>
+                        </div>
                     </div>
-                    <div id="cont-panel-tools" class="hidden md:flex flex-col gap-4 w-full md:w-[320px] shrink-0 h-full overflow-y-auto">
-                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm shrink-0"><h3 class="font-bold text-slate-700 text-sm mb-3">List Manager</h3><input type="text" id="new-list-name" placeholder="List Name..." class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500 mb-2"><div class="grid grid-cols-2 gap-2"><button onclick="ContactManager.saveSelection()" class="py-2 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700">Save / Update</button><button onclick="ContactManager.clearSelection()" class="py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50">Clear</button></div></div>
-                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[200px]"><div class="flex justify-between items-center mb-3"><h3 class="font-bold text-slate-700 text-sm">Saved Lists</h3><button onclick="Database.createNewEmpty()" class="text-[10px] font-bold text-brand-600 bg-brand-50 px-2 py-1 rounded hover:bg-brand-100">+ Manual List</button></div><div id="contact-grid" class="flex-1 overflow-y-auto space-y-2 pr-1"></div></div>
+
+                    <div id="cont-panel-tools" class="hidden md:flex flex-col gap-4 w-full md:w-[320px] shrink-0 h-full overflow-y-auto pb-10">
+                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm shrink-0">
+                            <h3 class="font-bold text-slate-700 text-sm mb-3">List Manager</h3>
+                            <input type="text" id="new-list-name" placeholder="New List Name..." class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500 mb-2">
+                            <div class="grid grid-cols-2 gap-2">
+                                <button onclick="ContactManager.saveSelection()" class="py-2 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 transition-colors">Save Selection</button>
+                                <button onclick="ContactManager.clearSelection()" class="py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50 transition-colors">Clear</button>
+                            </div>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[200px]">
+                            <div class="flex justify-between items-center mb-3">
+                                <h3 class="font-bold text-slate-700 text-sm">Cloud Lists</h3>
+                                <button onclick="Database.createNewEmpty()" class="text-[10px] font-bold text-brand-600 bg-brand-50 px-2 py-1 rounded hover:bg-brand-100 transition-colors">+ Manual</button>
+                            </div>
+                            <div id="contact-grid" class="flex-1 overflow-y-auto space-y-2 pr-1"></div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div id="view-settings" class="hidden max-w-xl mx-auto fade-in">
+            <div id="view-settings" class="hidden max-w-xl mx-auto animate-fade-in">
                 <div class="bg-white p-8 rounded-xl border border-slate-200 shadow-sm">
-                    <h3 class="font-bold text-lg text-slate-800 mb-6">Configuration</h3>
+                    <h3 class="font-bold text-lg text-slate-800 mb-6">System Configuration</h3>
                     <div class="space-y-6">
-                        <div><div class="flex justify-between mb-2"><label class="text-xs font-bold text-slate-600">Batch Size (Anti-Ban)</label><span id="val-batch" class="text-xs font-bold text-brand-600">10</span></div><input type="range" min="1" max="50" value="10" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" oninput="Settings.save('batch', this.value)"></div>
-                        <div><div class="flex justify-between mb-2"><label class="text-xs font-bold text-slate-600">Cool-down (s)</label><span id="val-cool" class="text-xs font-bold text-brand-600">60</span></div><input type="range" min="10" max="300" value="60" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" oninput="Settings.save('cool', this.value)"></div>
+                        <div>
+                            <div class="flex justify-between mb-2"><label class="text-xs font-bold text-slate-600">Batch Size (Anti-Ban)</label><span id="val-batch" class="text-xs font-bold text-brand-600">10</span></div>
+                            <input type="range" min="1" max="50" value="10" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" oninput="Settings.save('batch', this.value)">
+                        </div>
+                        <div>
+                            <div class="flex justify-between mb-2"><label class="text-xs font-bold text-slate-600">Cool-down Delay (Seconds)</label><span id="val-cool" class="text-xs font-bold text-brand-600">60</span></div>
+                            <input type="range" min="10" max="300" value="60" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" oninput="Settings.save('cool', this.value)">
+                        </div>
                     </div>
                 </div>
             </div>
+
         </div>
     </main>
 
-    <script src="nexus-core.js"></script>
-
     <script>
-        (async () => {
-            try {
-                // 1. Fetch Config from Render Backend
-                const _cfg = await fetch('https://mkwhatsapp.onrender.com/api/init').then(r => r.json());
-                
-                // 2. Set Global Config
-                window.CONFIG = { API_BASE: "", ..._cfg };
-                
-                // 3. Initialize Supabase
-                const { createClient } = supabase;
-                window.db = createClient(window.CONFIG.SUPABASE_URL, window.CONFIG.SUPABASE_KEY);
-                
-                // 4. Start App Logic (The exact calls your original code had)
-                lucide.createIcons();
-                Session.renderBtn();
-                Database.render();
-                Session.check();
-                setInterval(() => Session.check(), 5000);
-                setTimeout(() => Engine.checkRecovery(), 1000);
-                
-                // 5. Setup Router Defaults
-                Router.go('dashboard');
-                console.log("Nexus OS: Full Feature Mode Loaded");
-            } catch(e) {
-                console.error(e);
-                document.body.innerHTML = `<div class="p-10 text-center font-bold text-red-600">Fatal: Config Load Failed. Check Backend.</div>`;
+        /**
+         * NEXUS CORE | MONOLITH v3.2 Pro
+         * Single File Architecture. Zero Dependencies outside CDN.
+         */
+
+        // 1. CONFIGURATION & STATE
+        const CONFIG = {
+            API_BASE: "https://mkwhatsapp.onrender.com",
+            SUPABASE_URL: "YOUR_SUPABASE_URL", // Insert Real Key Here
+            SUPABASE_KEY: "YOUR_SUPABASE_KEY"  // Insert Real Key Here
+        };
+
+        const State = { 
+            user: 'client-1', 
+            status: 'OFFLINE', 
+            qr: null, 
+            activeFile: null, 
+            isRunning: false, 
+            settings: { batch: 10, cool: 60 }, 
+            allContacts: [], 
+            selection: new Set(), 
+            tempMemory: new Map(), 
+            activeCampaignId: null, 
+            historyCache: [] 
+        };
+
+        // 2. UTILITIES
+        const Utils = {
+            toast: (msg, type='info') => { 
+                const c = document.getElementById('toasts');
+                const el = document.createElement('div'); 
+                el.className = `${type === 'success' ? 'bg-emerald-600' : 'bg-slate-800'} text-white px-4 py-3 rounded-lg shadow-xl text-xs font-bold animate-fade-in`; 
+                el.innerText = msg; 
+                c.appendChild(el); 
+                setTimeout(() => el.remove(), 3000); 
+            },
+            log: (html) => {
+                const l = document.getElementById('console-logs');
+                const entry = document.createElement('div');
+                entry.innerHTML = html;
+                l.prepend(entry); // Newest at top
+            },
+            processFile: async (file) => {
+                // HEIC Conversion Logic
+                if (file.name.toLowerCase().endsWith('.heic') && window.heic2any) { 
+                    try { file = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.8 }); } catch(e){ console.error(e); } 
+                }
+                return new Promise(resolve => { 
+                    const r = new FileReader(); 
+                    r.readAsDataURL(file); 
+                    r.onload = () => resolve({ mimetype: file.type || 'image/jpeg', data: r.result.split(',')[1], filename: file.name }); 
+                });
+            },
+            exportCSV: (name, dataPromise) => {
+                Promise.resolve(dataPromise).then(res => {
+                    const data = res.contacts || res;
+                    const csv = "data:text/csv;charset=utf-8,Name,Number\n" + data.map(e => `${e.name},${e.number}`).join("\n");
+                    const link = document.createElement("a"); link.href = encodeURI(csv); link.download = `${name}.csv`; document.body.appendChild(link); link.click(); link.remove();
+                });
             }
+        };
+
+        // 3. API & DATABASE LAYER
+        const Api = {
+            req: async (endpoint, body) => {
+                try {
+                    const r = await fetch(`${CONFIG.API_BASE}/api/${endpoint}`, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+                    return r.ok ? await r.json() : null;
+                } catch (e) { return null; }
+            }
+        };
+
+        const DataStore = {
+            q: (table) => window.db.from(table),
+            // Lists
+            async getLists() { const { data } = await this.q('lists').select('id, name, contacts').order('created_at', { ascending: false }); return data ? data.map(i => ({ id: i.id, name: i.name, count: i.contacts ? i.contacts.length : 0 })) : []; },
+            async getListContent(id) { const { data } = await this.q('lists').select('name, contacts').eq('id', id).single(); return data || { name: '', contacts: [] }; },
+            async saveList(name, contacts) { const { data: existing } = await this.q('lists').select('id').eq('name', name).maybeSingle(); if (existing) await this.q('lists').update({ contacts }).eq('id', existing.id); else await this.q('lists').insert([{ name, contacts }]); },
+            async deleteList(id) { await this.q('lists').delete().eq('id', id); },
+            // Campaigns
+            async createCampaign(name, msg, total, mediaFile) {
+                let mData = null, mMime = null, mName = null;
+                if(mediaFile) { mData = mediaFile.data; mMime = mediaFile.mimetype; mName = mediaFile.filename; }
+                const { data, error } = await this.q('campaigns').insert([{ name, message: msg, total_count: total, sent_count: 0, status: 'running', media_data: mData, media_mime: mMime, media_name: mName }]).select().single();
+                return error ? null : data.id;
+            },
+            async addToQueue(campId, numbers) {
+                const rows = numbers.map(n => ({ campaign_id: campId, number: n, status: 'pending' }));
+                for (let i = 0; i < rows.length; i += 500) await this.q('campaign_queue').insert(rows.slice(i, i + 500));
+            },
+            async getNextBatch(campId, size) { const { data } = await this.q('campaign_queue').select('id, number').eq('campaign_id', campId).eq('status', 'pending').limit(size); return data || []; },
+            async updateQueueStatus(itemId, status) { await this.q('campaign_queue').update({ status }).eq('id', itemId); },
+            async updateStats(id, type) { 
+                // Increment logic
+                const { data } = await this.q('campaigns').select(`${type}_count`).eq('id', id).single(); 
+                if(data) await this.q('campaigns').update({ [`${type}_count`]: data[`${type}_count`] + 1 }).eq('id', id); 
+            },
+            async updateStatus(id, status) { await this.q('campaigns').update({ status }).eq('id', id); },
+            async getCampaigns() { const { data } = await this.q('campaigns').select('id, name, created_at, sent_count, total_count, status').order('created_at', { ascending: false }).limit(20); return data || []; },
+            async getCampaignFull(id) { const { data } = await this.q('campaigns').select('*').eq('id', id).single(); return data; },
+            async getRunning() { const { data } = await this.q('campaigns').select('*').eq('status', 'running').order('created_at', { ascending: false }).limit(1).single(); return data; }
+        };
+
+        // 4. ENGINE CONTROLLER
+        const Engine = {
+            handleFile(i) { 
+                if(i.files[0]) { 
+                    document.getElementById('file-name').innerText = i.files[0].name; 
+                    Utils.processFile(i.files[0]).then(f => State.activeFile = f); 
+                } 
+            },
+            async createAndQueue() {
+                const raw = document.getElementById('camp-input').value;
+                const msg = document.getElementById('camp-msg').value;
+                const name = document.getElementById('camp-name').value || `Campaign ${new Date().toLocaleTimeString()}`;
+                const nums = raw.match(/\d{10,}/g) || [];
+                
+                if(!nums.length) return Utils.toast("No valid numbers found", "error");
+                
+                Utils.toast("Creating Campaign...", "info");
+                const campId = await DataStore.createCampaign(name, msg, nums.length, State.activeFile);
+                if(!campId) return Utils.toast("Database Error", "error");
+
+                Utils.toast(`Queueing ${nums.length} contacts...`, "info");
+                await DataStore.addToQueue(campId, nums);
+
+                State.activeCampaignId = campId;
+                document.getElementById('active-camp-display').innerText = `ID: ${campId.slice(0,8)}...`;
+                this.toggle(true); // Force start
+            },
+            toggle(forceStart = false) { 
+                if(forceStart) State.isRunning = false; 
+                State.isRunning = !State.isRunning; 
+                const btn = document.getElementById('btn-engine-toggle');
+                btn.innerText = State.isRunning ? "PAUSE" : "RESUME"; 
+                btn.className = State.isRunning ? "text-[10px] font-bold px-4 py-1.5 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 border border-amber-200 transition-colors" : "text-[10px] font-bold px-4 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200 transition-colors";
+                
+                if(State.isRunning) this.processBatch(); 
+            },
+            clear() { 
+                State.activeCampaignId = null; State.isRunning = false; 
+                document.getElementById('btn-engine-toggle').innerText = "START"; 
+                document.getElementById('active-camp-display').innerText = "No Active Campaign"; 
+                Utils.toast("Engine Reset"); 
+            },
+            async processBatch() {
+                if(!State.isRunning) return;
+                const batch = await DataStore.getNextBatch(State.activeCampaignId, parseInt(State.settings.batch)||10);
+
+                if(!batch || !batch.length) {
+                    await DataStore.updateStatus(State.activeCampaignId, 'completed');
+                    Utils.toast("Campaign Finished!", "success");
+                    this.clear();
+                    this.refreshCampaigns();
+                    return;
+                }
+
+                Utils.log(`<div class="mt-2 mb-1 text-[10px] font-bold text-slate-400 text-center">--- Processing Batch (${batch.length}) ---</div>`);
+
+                for (const item of batch) {
+                    if(!State.isRunning) break;
+                    const msg = document.getElementById('camp-msg').value; // Dynamic read
+
+                    try {
+                        await Api.req('send', { id: State.user, number: item.number, message: msg, file: State.activeFile });
+                        await DataStore.updateQueueStatus(item.id, 'sent');
+                        await DataStore.updateStats(State.activeCampaignId, 'sent');
+                        
+                        document.getElementById('stat-sent').innerText = (parseInt(document.getElementById('stat-sent').innerText) || 0) + 1;
+                        Utils.log(`<div class="text-emerald-600 font-bold border-l-2 border-emerald-500 pl-2 text-[10px] flex justify-between"><span>${item.number}</span><span>SENT</span></div>`);
+                    } catch(e) {
+                        await DataStore.updateQueueStatus(item.id, 'failed');
+                        Utils.log(`<div class="text-red-500 font-bold border-l-2 border-red-500 pl-2 text-[10px] flex justify-between"><span>${item.number}</span><span>FAIL</span></div>`);
+                    }
+
+                    // Random Micro-delay
+                    await new Promise(r => setTimeout(r, Math.random() * 2000 + 1000));
+                }
+
+                if(State.isRunning) {
+                    const cool = parseInt(State.settings.cool) || 60;
+                    Utils.log(`<div class="text-amber-600 text-[10px] text-center italic my-1 bg-amber-50 rounded p-1">Cooling down for ${cool}s...</div>`);
+                    setTimeout(() => this.processBatch(), cool * 1000);
+                }
+            },
+            async refreshCampaigns() {
+                const tbody = document.getElementById('history-table-body');
+                tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-xs text-slate-400">Loading DB...</td></tr>';
+                const camps = await DataStore.getCampaigns();
+                State.historyCache = camps; 
+                tbody.innerHTML = '';
+                if(!camps.length) { tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-xs text-slate-400">No history found</td></tr>'; return; }
+                camps.forEach((c, idx) => {
+                    const row = document.createElement('tr');
+                    row.className = "hover:bg-slate-50 transition-colors border-b border-slate-50";
+                    row.innerHTML = `<td class="px-6 py-3 font-bold text-xs text-slate-800">${c.name}</td><td class="px-6 py-3 text-[10px] text-slate-500">${new Date(c.created_at).toLocaleDateString()}</td><td class="px-6 py-3 text-xs font-mono"><span class="text-emerald-600 font-bold">${c.sent_count}</span> <span class="text-slate-300">/</span> <span class="text-slate-500">${c.total_count}</span></td><td class="px-6 py-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${c.status==='running'?'bg-blue-100 text-blue-700':(c.status==='completed'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500')}">${c.status}</span></td><td class="px-6 py-3 text-right"><button onclick="Engine.loadFromHistory(${idx})" class="text-[10px] font-bold bg-white border border-slate-200 text-slate-600 hover:text-brand-600 hover:border-brand-200 px-3 py-1 rounded transition-colors shadow-sm">Load</button></td>`;
+                    tbody.appendChild(row);
+                });
+            },
+            async loadFromHistory(idx) {
+                const minimal = State.historyCache[idx];
+                if(!minimal) return;
+                Utils.toast("Loading Data...", "info");
+                const full = await DataStore.getCampaignFull(minimal.id);
+                
+                UI.setCampTab('launch');
+                document.getElementById('camp-name').value = `${full.name} (Copy)`;
+                document.getElementById('camp-msg').value = full.message || "";
+                
+                if(full.media_data) {
+                    State.activeFile = { data: full.media_data, mimetype: full.media_mime, filename: full.media_name };
+                    document.getElementById('file-name').innerText = `${full.media_name} (Loaded)`;
+                    document.getElementById('file-name').classList.add("text-emerald-600");
+                }
+            },
+            async checkRecovery() {
+                const active = await DataStore.getRunning();
+                if(active && confirm(`Recover interrupted campaign "${active.name}"?`)) {
+                    State.activeCampaignId = active.id;
+                    document.getElementById('active-camp-display').innerText = `ID: ${active.id.slice(0,8)}...`;
+                    document.getElementById('camp-name').value = active.name;
+                    document.getElementById('camp-msg').value = active.message;
+                    if(active.media_data) {
+                        State.activeFile = { data: active.media_data, mimetype: active.media_mime, filename: active.media_name };
+                        document.getElementById('file-name').innerText = `${active.media_name} (Recovered)`;
+                    }
+                    Utils.toast("Recovered. Click START.", "success");
+                }
+            }
+        };
+
+        // 5. MANAGERS
+        const Session = {
+            switch(id) { State.user = id; this.renderBtn(); this.check(); },
+            renderBtn() { ['client-1','client-2'].forEach(id => { const btn = document.getElementById(`btn-${id}`); btn.className = `py-2 text-[10px] font-bold rounded-lg border transition-all ${State.user===id ? 'border-brand-600 bg-brand-600 text-white shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`; }); },
+            async start() {
+                document.getElementById('action-area').innerHTML = `<div class="w-full py-2 bg-slate-100 text-slate-400 text-xs font-bold rounded-lg flex justify-center gap-2"><span class="loader border-slate-300 border-b-slate-500 animate-spin-slow rounded-full w-4 h-4"></span> Connecting...</div>`;
+                await Api.req('start', { id: State.user }); setTimeout(() => this.check(), 2000);
+            },
+            async stop() { if(confirm("Stop Session?")) await Api.req('logout', { id: State.user }); this.check(); },
+            async check() {
+                const res = await Api.req(`status/${State.user}`);
+                const area = document.getElementById('action-area'), dot = document.getElementById('conn-dot');
+                if(res) {
+                    State.status = res.status; State.qr = res.qr;
+                    if(State.status === 'READY') { dot.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]"; area.innerHTML = `<button onclick="Session.stop()" class="w-full py-2 bg-red-50 text-red-600 text-xs font-bold rounded-lg hover:bg-red-100 transition-colors">Disconnect</button>`; document.getElementById('modal-qr').classList.add('hidden'); } 
+                    else if (State.status === 'QR_READY') { dot.className = "w-2 h-2 rounded-full bg-blue-500 animate-pulse"; area.innerHTML = `<button onclick="document.getElementById('modal-qr').classList.remove('hidden')" class="w-full py-2 bg-brand-600 text-white text-xs font-bold rounded-lg hover:bg-brand-700 transition-colors">Scan QR</button>`; if(State.qr && window.QRious) new QRious({ element: document.getElementById('qr-canvas'), value: State.qr, size: 200 }); } 
+                    else { dot.className = "w-2 h-2 rounded-full bg-slate-300"; area.innerHTML = `<button onclick="Session.start()" class="w-full py-2 bg-slate-800 text-white text-xs font-bold rounded-lg hover:bg-slate-900 transition-colors">Initialize</button>`; }
+                }
+            }
+        };
+
+        const ContactManager = {
+            async sync() {
+                const btn = document.getElementById('btn-sync'); btn.innerHTML = "...";
+                const res = await Api.req(`contacts/${State.user}`);
+                if(res && res.contacts) {
+                    const existing = new Set(State.allContacts.map(c => c.number));
+                    res.contacts.forEach(c => { if(!existing.has(c.number)) State.allContacts.push(c); State.tempMemory.set(c.number, c.name); });
+                    State.allContacts.sort((a,b) => (a.name||'').localeCompare(b.name||''));
+                    this.renderList(State.allContacts.slice(0, 100));
+                    Utils.toast(`Synced ${res.contacts.length} items`, "success");
+                }
+                btn.innerHTML = `<i data-lucide="refresh-cw" class="w-4 h-4"></i>`; lucide.createIcons();
+            },
+            renderList(list) {
+                const container = document.getElementById('contact-list-container'); container.innerHTML = '';
+                document.getElementById('count-all').innerText = State.allContacts.length;
+                list.forEach(c => {
+                    const isSel = State.selection.has(c.number);
+                    const el = document.createElement('div');
+                    el.className = `flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-all border mb-1 ${isSel ? 'bg-brand-50 border-brand-500' : 'bg-white border-transparent hover:bg-slate-50'}`;
+                    el.onclick = () => { if(State.selection.has(c.number)) State.selection.delete(c.number); else State.selection.add(c.number); this.renderList(list); document.getElementById('sel-count').innerText = State.selection.size; };
+                    el.innerHTML = `<div class="flex items-center gap-3 pointer-events-none"><div class="w-8 h-8 rounded-full ${isSel ? 'bg-brand-200 text-brand-700' : 'bg-slate-100 text-slate-500'} flex items-center justify-center text-xs font-bold shrink-0">${(c.name||'#').charAt(0).toUpperCase()}</div><div><h4 class="text-xs font-bold text-slate-700 truncate w-32 md:w-40">${c.name||'Unknown'}</h4><p class="text-[10px] text-slate-400 font-mono">${c.number}</p></div></div><div class="pointer-events-none w-4 h-4 rounded-full border ${isSel ? 'bg-brand-600 border-brand-600 text-white' : 'border-slate-300'} flex items-center justify-center text-[10px]">${isSel ? '✓' : ''}</div>`;
+                    container.appendChild(el);
+                });
+            },
+            filter() { const q = document.getElementById('contact-search').value.toLowerCase(); this.renderList(State.allContacts.filter(c => (c.name||'').toLowerCase().includes(q) || c.number.includes(q)).slice(0, 100)); },
+            async saveSelection() {
+                const name = document.getElementById('new-list-name').value;
+                if(!name || !State.selection.size) return Utils.toast("Name or selection missing", "error");
+                const listData = [];
+                State.selection.forEach(num => { let c = State.allContacts.find(x => x.number === num); let savedName = State.tempMemory.get(num) || "Manual"; listData.push({ name: c ? c.name : savedName, number: num }); });
+                await DataStore.saveList(name, listData);
+                Utils.toast("List Saved", "success"); this.clearSelection(); Database.render();
+            },
+            clearSelection() { State.selection.clear(); document.getElementById('sel-count').innerText = 0; document.getElementById('new-list-name').value = ''; this.filter(); }
+        };
+
+        const Database = {
+            async render() {
+                const grid = document.getElementById('contact-grid'), sel = document.getElementById('camp-list-selector');
+                grid.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">Loading Cloud...</div>'; 
+                sel.innerHTML = '<option value="">Load Cloud List</option>';
+                const lists = await DataStore.getLists();
+                grid.innerHTML = '';
+                lists.forEach(l => {
+                    const div = document.createElement('div');
+                    div.className = "flex justify-between items-center p-3 bg-slate-50 border border-slate-200 rounded-lg hover:border-slate-300 transition-colors";
+                    div.innerHTML = `<div><p class="text-xs font-bold text-slate-700">${l.name}</p><p class="text-[10px] text-slate-400">${l.count} items</p></div><div class="flex gap-1"><button onclick="Utils.exportCSV('${l.name}', DataStore.getListContent('${l.id}'))" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-green-600"><i data-lucide="download" class="w-3 h-3"></i></button><button onclick="Database.openEdit('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-blue-600"><i data-lucide="pencil" class="w-3 h-3"></i></button><button onclick="Database.delete('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-red-500"><i data-lucide="trash" class="w-3 h-3"></i></button></div>`;
+                    grid.appendChild(div);
+                    const opt = document.createElement('option'); opt.value = l.id; opt.innerText = `${l.name} (${l.count})`; sel.appendChild(opt);
+                });
+                document.getElementById('stat-stored').innerText = lists.length;
+                lucide.createIcons();
+            },
+            async delete(id) { if(confirm("Delete Cloud List?")) { await DataStore.deleteList(id); this.render(); } },
+            async loadListToCamp(id) {
+                if(!id) return;
+                const { contacts } = await DataStore.getListContent(id);
+                document.getElementById('camp-input').value = contacts.map(c => c.number).join('\n');
+                Utils.toast("Numbers Loaded", "success");
+            },
+            createNewEmpty() { this.openEdit(null); },
+            async openEdit(id) {
+                const modal = document.getElementById('modal-edit'), area = document.getElementById('edit-area'); document.getElementById('edit-key-hidden').value = id || "NEW";
+                area.value = "Loading...";
+                if(id) { const { contacts } = await DataStore.getListContent(id); area.value = contacts.map(i => `${i.number} | ${i.name}`).join('\n'); } else { area.value = ""; }
+                modal.classList.remove('hidden');
+            },
+            closeEdit() { document.getElementById('modal-edit').classList.add('hidden'); },
+            async saveEdit() {
+                const id = document.getElementById('edit-key-hidden').value, raw = document.getElementById('edit-area').value;
+                let listName = ""; 
+                if(id === "NEW") { listName = prompt("Enter List Name:"); if(!listName) return; }
+                const newData = []; raw.split('\n').forEach(line => { if(line.trim()) { const p = line.split('|'); newData.push({ number: p[0].trim(), name: p[1] ? p[1].trim() : "Manual" }); } });
+                if(id !== "NEW") { const { name } = await DataStore.getListContent(id); listName = name; }
+                await DataStore.saveList(listName, newData);
+                Utils.toast("Saved", "success"); this.closeEdit(); this.render();
+            }
+        };
+
+        const Router = { 
+            go(p) { 
+                document.querySelectorAll('[id^="view-"]').forEach(v => v.classList.add('hidden')); 
+                document.getElementById(`view-${p}`).classList.remove('hidden'); 
+                document.querySelectorAll('.nav-item').forEach(n => { n.classList.remove('bg-brand-50','text-brand-600'); n.classList.add('text-slate-500'); }); 
+                const nav = document.getElementById(`nav-${p}`);
+                if(nav) { nav.classList.remove('text-slate-500'); nav.classList.add('bg-brand-50','text-brand-600'); }
+                document.getElementById('page-title').innerText = p.charAt(0).toUpperCase() + p.slice(1); 
+                document.getElementById('sidebar').classList.add('-translate-x-full'); 
+                document.getElementById('mobile-overlay').classList.add('hidden'); 
+            } 
+        };
+        
+        const Settings = { save(k,v) { State.settings[k]=v; document.getElementById(`val-${k}`).innerText = v; } };
+        
+        const UI = {
+            toggleSidebar() { document.getElementById('sidebar').classList.toggle('-translate-x-full'); document.getElementById('mobile-overlay').classList.toggle('hidden'); },
+            setContactTab(tab) {
+                const list = document.getElementById('cont-panel-list'), tools = document.getElementById('cont-panel-tools');
+                const btnList = document.getElementById('tab-list'), btnTools = document.getElementById('tab-tools');
+                if(tab === 'list') { list.classList.remove('hidden'); tools.classList.add('hidden'); btnList.classList.add('bg-white','shadow-sm','text-slate-800'); btnTools.classList.remove('bg-white','shadow-sm','text-slate-800'); } 
+                else { list.classList.add('hidden'); tools.classList.remove('hidden'); tools.classList.add('flex'); btnTools.classList.add('bg-white','shadow-sm','text-slate-800'); btnList.classList.remove('bg-white','shadow-sm','text-slate-800'); }
+            },
+            setCampTab(tab) {
+                const launch = document.getElementById('panel-camp-launch'), history = document.getElementById('panel-camp-history');
+                const btnLaunch = document.getElementById('tab-camp-launch'), btnHistory = document.getElementById('tab-camp-history');
+                if(tab === 'launch') { 
+                    launch.classList.remove('hidden'); history.classList.add('hidden'); 
+                    btnLaunch.classList.add('bg-white','shadow-sm','text-slate-800'); btnLaunch.classList.remove('text-slate-500');
+                    btnHistory.classList.remove('bg-white','shadow-sm','text-slate-800'); btnHistory.classList.add('text-slate-500');
+                } else { 
+                    launch.classList.add('hidden'); history.classList.remove('hidden'); 
+                    btnHistory.classList.add('bg-white','shadow-sm','text-slate-800'); btnHistory.classList.remove('text-slate-500');
+                    btnLaunch.classList.remove('bg-white','shadow-sm','text-slate-800'); btnLaunch.classList.add('text-slate-500');
+                    Engine.refreshCampaigns();
+                }
+            }
+        };
+
+        // --- INIT ---
+        (async () => {
+            const { createClient } = supabase;
+            window.db = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
+            
+            lucide.createIcons();
+            Session.renderBtn();
+            Database.render();
+            Session.check();
+            
+            setInterval(() => Session.check(), 5000);
+            setTimeout(() => Engine.checkRecovery(), 1000);
+            
+            Router.go('dashboard');
         })();
     </script>
 </body>
