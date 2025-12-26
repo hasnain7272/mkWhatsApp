@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Nexus OS | v4.0 Sync</title>
+    <title>Nexus OS | v5.0 Integrated</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
@@ -27,13 +27,13 @@
 
     <aside id="sidebar" class="fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 -translate-x-full md:translate-x-0 shadow-2xl md:shadow-none">
         <div class="h-16 flex items-center px-6 border-b border-slate-100 shrink-0">
-            <div class="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-brand-500/30"><i data-lucide="zap" class="w-5 h-5"></i></div>
-            <div><h1 class="font-bold text-lg tracking-tight">Nexus OS</h1><span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">v4.0 Sync</span></div>
+            <div class="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-brand-500/30"><i data-lucide="cpu" class="w-5 h-5"></i></div>
+            <div><h1 class="font-bold text-lg tracking-tight">Nexus OS</h1><span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">v5.0 Integrated</span></div>
             <button onclick="UI.toggleSidebar()" class="ml-auto md:hidden text-slate-400 p-2"><i data-lucide="x" class="w-5 h-5"></i></button>
         </div>
         <div class="flex-1 p-4 overflow-y-auto space-y-6">
             <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                <div class="flex items-center justify-between mb-3"><span class="text-[10px] uppercase font-bold text-slate-400">Connection</span><span id="conn-dot" class="w-2 h-2 rounded-full bg-slate-300"></span></div>
+                <div class="flex items-center justify-between mb-3"><span class="text-[10px] uppercase font-bold text-slate-400">Whatsapp Node</span><span id="conn-dot" class="w-2 h-2 rounded-full bg-slate-300"></span></div>
                 <div class="grid grid-cols-2 gap-2 mb-3">
                     <button onclick="Session.switch('client-1')" id="btn-c1" class="py-2 text-[10px] font-bold rounded-lg border">NODE 1</button>
                     <button onclick="Session.switch('client-2')" id="btn-c2" class="py-2 text-[10px] font-bold rounded-lg border">NODE 2</button>
@@ -41,21 +41,22 @@
                 <div id="action-area"></div>
             </div>
             <nav class="space-y-1">
-                <button onclick="Router.go('campaigns')" id="nav-campaigns" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="layout-dashboard" class="w-4 h-4"></i> Campaign Manager</button>
+                <button onclick="Router.go('dashboard')" id="nav-dashboard" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="layout-grid" class="w-4 h-4"></i> Dashboard</button>
+                <button onclick="Router.go('campaigns')" id="nav-campaigns" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="megaphone" class="w-4 h-4"></i> Campaigns</button>
                 <button onclick="Router.go('contacts')" id="nav-contacts" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="users" class="w-4 h-4"></i> Contacts</button>
                 <button onclick="Router.go('settings')" id="nav-settings" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="settings" class="w-4 h-4"></i> Config</button>
             </nav>
         </div>
         <div class="p-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
-            <div class="flex justify-between items-center mb-2"><span class="text-[10px] font-bold text-slate-500 uppercase">DB Queue Status</span><span id="db-status-text" class="text-[10px] font-bold text-slate-400">IDLE</span></div>
+            <div class="flex justify-between items-center mb-2"><span class="text-[10px] font-bold text-slate-500 uppercase">Queue Sync</span><span id="db-status-text" class="text-[10px] font-bold text-slate-400">IDLE</span></div>
             <div class="w-full bg-slate-200 h-1 rounded-full"><div id="db-progress-bar" class="h-full bg-slate-400 w-0 transition-all"></div></div>
         </div>
     </aside>
 
     <main class="flex-1 relative flex flex-col h-full overflow-hidden w-full bg-white md:bg-slate-50/30 md:ml-72 transition-all">
         <header class="h-16 px-4 md:px-8 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-30">
-            <div class="flex items-center gap-3"><button onclick="UI.toggleSidebar()" class="md:hidden p-2 -ml-2 text-slate-600"><i data-lucide="menu" class="w-5 h-5"></i></button><h2 id="page-title" class="text-lg md:text-xl font-bold text-slate-800">Manager</h2></div>
-            <div class="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600 shadow-sm flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span><span>Live Sync</span></div>
+            <div class="flex items-center gap-3"><button onclick="UI.toggleSidebar()" class="md:hidden p-2 -ml-2 text-slate-600"><i data-lucide="menu" class="w-5 h-5"></i></button><h2 id="page-title" class="text-lg md:text-xl font-bold text-slate-800">Dashboard</h2></div>
+            <div class="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600 shadow-sm flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span><span>Supabase Connected</span></div>
         </header>
 
         <div class="flex-1 overflow-y-auto p-4 md:p-6 relative no-scrollbar">
@@ -63,13 +64,21 @@
             <div id="modal-qr" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 fade-in">
                 <div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-sm text-center border border-slate-100">
                     <canvas id="qr-canvas" class="mx-auto mb-4 border p-2 rounded-lg"></canvas>
-                    <button onclick="document.getElementById('modal-qr').classList.add('hidden')" class="px-6 py-2 bg-slate-100 rounded-lg text-xs font-bold">Close</button>
+                    <button onclick="document.getElementById('modal-qr').classList.add('hidden')" class="px-6 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">Close</button>
                 </div>
             </div>
 
-            <div id="view-campaigns" class="max-w-7xl mx-auto h-full flex flex-col md:flex-row gap-6 fade-in">
+            <div id="view-dashboard" class="max-w-6xl mx-auto space-y-6 fade-in">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="database" class="w-4 h-4 text-brand-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Cloud Lists</span></div><p id="stat-lists" class="text-3xl font-bold text-slate-800 tracking-tight">0</p></div>
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="zap" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Queue Engine</span></div><p class="text-3xl font-bold text-slate-800 tracking-tight">Supabase</p></div>
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Architecture</span></div><p class="text-3xl font-bold text-slate-800 tracking-tight">v5.0</p></div>
+                </div>
+            </div>
+
+            <div id="view-campaigns" class="hidden max-w-7xl mx-auto h-full flex flex-col md:flex-row gap-6 fade-in">
                 
-                <div class="w-full md:w-[400px] flex flex-col gap-4 shrink-0 overflow-y-auto">
+                <div class="w-full md:w-[400px] flex flex-col gap-4 shrink-0 overflow-y-auto pb-20">
                     <div class="bg-white border border-slate-200 p-5 rounded-xl shadow-sm">
                         <h3 class="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2"><i data-lucide="plus-circle" class="w-4 h-4 text-brand-500"></i> New Campaign</h3>
                         
@@ -81,10 +90,7 @@
                             <div id="camp-tags-area" class="flex flex-wrap gap-1.5 mt-2 min-h-[30px]"></div>
                         </div>
 
-                        <div class="mb-3">
-                            <label class="text-[10px] font-bold text-slate-400 uppercase">Manual Numbers</label>
-                            <textarea id="camp-manual" class="w-full mt-1 bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-mono outline-none focus:border-brand-500 resize-none h-20" placeholder="Paste numbers..."></textarea>
-                        </div>
+                        <div class="mb-3"><label class="text-[10px] font-bold text-slate-400 uppercase">Manual Numbers</label><textarea id="camp-manual" class="w-full mt-1 bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-mono outline-none focus:border-brand-500 resize-none h-20" placeholder="Paste numbers..."></textarea></div>
 
                         <div class="mb-3">
                             <label class="text-[10px] font-bold text-slate-400 uppercase">Message</label>
@@ -111,9 +117,6 @@
                                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                                     <span id="mon-status" class="text-xs font-mono text-emerald-400">PROCESSING DB QUEUE</span>
                                 </div>
-                            </div>
-                            <div class="text-right">
-                                <button onclick="Engine.pauseActive()" class="text-[10px] font-bold bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-white border border-slate-600">PAUSE / STOP</button>
                             </div>
                         </div>
                         <div class="grid grid-cols-3 gap-4 border-t border-slate-800 pt-4">
@@ -146,40 +149,74 @@
             </div>
 
             <div id="view-contacts" class="hidden h-full flex flex-col fade-in">
-                <div class="bg-white p-10 text-center rounded-xl border border-slate-200"><h2 class="font-bold text-slate-400">Contact Manager Available</h2></div>
+                <div class="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
+                    
+                    <div class="flex-1 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col overflow-hidden h-full">
+                        <div class="p-3 border-b border-slate-100 flex gap-2 shrink-0">
+                            <div class="relative flex-1"><i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-slate-400"></i><input type="text" id="contact-search" onkeyup="ContactManager.filter()" placeholder="Search..." class="pl-9 w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500"></div>
+                            <button onclick="ContactManager.sync()" id="btn-sync" class="px-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+                        </div>
+                        <div class="px-4 py-2 bg-slate-50/80 border-b border-slate-100 flex justify-between shrink-0">
+                            <span class="text-[10px] font-bold text-slate-400 uppercase">Total: <span id="count-all">0</span></span>
+                            <span class="text-[10px] font-bold text-brand-600 uppercase">Selected: <span id="sel-count">0</span></span>
+                        </div>
+                        <div id="contact-list-container" class="flex-1 overflow-y-auto p-2 space-y-1">
+                            <div class="text-center mt-20 text-slate-400 text-xs">Sync contacts to get started.</div>
+                        </div>
+                    </div>
+
+                    <div class="w-full md:w-[320px] shrink-0 h-full overflow-y-auto flex flex-col gap-4">
+                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm shrink-0">
+                            <h3 class="font-bold text-slate-700 text-sm mb-3">Save Selection as List</h3>
+                            <input type="text" id="new-list-name" placeholder="List Name (e.g. VIP Clients)..." class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500 mb-2">
+                            <div class="grid grid-cols-2 gap-2">
+                                <button onclick="ContactManager.saveSelection()" class="py-2 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700">Save List</button>
+                                <button onclick="ContactManager.clearSelection()" class="py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50">Clear</button>
+                            </div>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[200px]">
+                            <h3 class="font-bold text-slate-700 text-sm mb-3">Saved Cloud Lists</h3>
+                            <div id="contact-grid" class="flex-1 overflow-y-auto space-y-2 pr-1"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
+
             <div id="view-settings" class="hidden h-full fade-in">
                 <div class="max-w-lg mx-auto bg-white p-6 rounded-xl border border-slate-200">
                     <h3 class="font-bold mb-4">Engine Config</h3>
-                    <div class="mb-4"><label class="text-xs font-bold text-slate-500">Batch Size</label><input type="range" class="w-full" onchange="Settings.save('batch', this.value)"><span id="val-batch" class="text-xs font-bold float-right text-brand-600">10</span></div>
+                    <div class="mb-4"><label class="text-xs font-bold text-slate-500">Batch Size (Anti-Ban)</label><input type="range" class="w-full" onchange="Settings.save('batch', this.value)"><span id="val-batch" class="text-xs font-bold float-right text-brand-600">10</span></div>
                     <div class="mb-4"><label class="text-xs font-bold text-slate-500">Cool Down (s)</label><input type="range" class="w-full" onchange="Settings.save('cool', this.value)"><span id="val-cool" class="text-xs font-bold float-right text-brand-600">60</span></div>
                 </div>
             </div>
 
         </div>
     </main>
+
     <script src="nexus-core.js"></script>
     <script>
         (async () => {
             try {
-                // Init
+                // 1. Init Config
                 const _cfg = await fetch('https://mkwhatsapp.onrender.com/api/init').then(r => r.json());
                 window.CONFIG = { API_BASE: "", ..._cfg };
                 window.db = supabase.createClient(window.CONFIG.SUPABASE_URL, window.CONFIG.SUPABASE_KEY);
                 
-                // Boot
+                // 2. Init Core
                 lucide.createIcons();
                 Session.renderBtn();
-                Database.renderListSelector();
-                Session.check();
-                setInterval(() => Session.check(), 5000); // Connection Heartbeat
+                Database.renderListSelector(); 
+                Database.renderSavedLists();
                 
-                // THE NEW SYNC ENGINE
-                setInterval(() => Engine.syncMonitor(), 2000); // UI Sync
-                setTimeout(() => Engine.processQueue(), 1000); // Worker Loop
+                // 3. Start Heartbeats
+                Session.check();
+                setInterval(() => Session.check(), 5000); 
+                setInterval(() => Engine.syncMonitor(), 2000); // Live DB Status
+                setTimeout(() => Engine.processQueue(), 1000); // Worker
 
-                Router.go('campaigns');
-                console.log("Nexus OS: v4.0 Sync Active");
+                // 4. Default Route
+                Router.go('dashboard');
+                console.log("Nexus OS v5.0: Integrated & Live");
             } catch(e) { console.error(e); }
         })();
     </script>
