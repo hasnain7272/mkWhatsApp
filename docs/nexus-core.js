@@ -1,154 +1,216 @@
 /**
- * NEXUS CORE v2.6 | Hybrid Architecture with History
- * RAM Execution + DB Reporting + Table Management
+ * NEXUS CORE v3.1 | CONTROLLER
+ * Handles State, Database, API, and Execution Loop.
  */
 
-const CONFIG = {
-    API_BASE: "https://mkwhatsapp.onrender.com",
-    SUPABASE_URL: "https://upvprcemxefhviwptqnb.supabase.co",
-    SUPABASE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwdnByY2VteGVmaHZpd3B0cW5iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NTY5MzQsImV4cCI6MjA4MjEzMjkzNH0.yhaJUoNjflw0_cgjuk6HCFA7XIUiWTaG7tZBM4CfCGk" 
+// Global State Container
+const State = { 
+    user: 'client-1', 
+    running: false, 
+    activeCamp: null, 
+    file: null, 
+    queue: [], 
+    contacts: [], 
+    settings: { batch: 10, cool: 60 } 
 };
 
-// Initialize Supabase
-const { createClient } = supabase;
-const db = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
+// Central Utilities (Logger & Toast)
+const Utils = { 
+    toast: (msg, type='info') => { 
+        const c = document.getElementById('toasts');
+        if(!c) return;
+        const el = document.createElement('div'); 
+        el.className = `${type === 'success' ? 'bg-emerald-600' : 'bg-slate-800'} text-white px-4 py-3 rounded-lg shadow-xl text-xs font-bold animate-bounce fade-in`; 
+        el.innerText = msg; 
+        c.appendChild(el); 
+        setTimeout(() => el.remove(), 3000); 
+    },
+    log: (msg, type='info') => { 
+        const l = document.getElementById('console-logs');
+        if(!l) return;
+        l.innerHTML = `<div class="${type=='err'?'text-red-500':'text-slate-500'} border-l-2 ${type=='success'?'border-emerald-500':'border-slate-200'} pl-2 text-[10px] py-0.5">> ${msg}</div>` + l.innerHTML; 
+    }
+};
 
+// Database Abstraction Layer (Supabase)
 const DataStore = {
-    // --- LISTS ---
-    async getLists() {
-        const { data, error } = await db.from('lists').select('id, name, contacts').order('created_at', { ascending: false });
-        if (error) return [];
-        return data.map(i => ({ id: i.id, name: i.name, count: i.contacts ? i.contacts.length : 0 }));
-    },
-    async getListContent(id) {
-        const { data } = await db.from('lists').select('name, contacts').eq('id', id).single();
-        return data || { name: '', contacts: [] }; 
-    },
-    async saveList(name, contacts) {
-        const { data: existing } = await db.from('lists').select('id').eq('name', name).maybeSingle();
-        if (existing) await db.from('lists').update({ contacts }).eq('id', existing.id);
-        else await db.from('lists').insert([{ name, contacts }]);
-    },
-    async deleteList(id) { await db.from('lists').delete().eq('id', id); },
-
-    // --- CAMPAIGNS ---
-    async createCampaign(name, msg, total, mediaFile) {
-        let mData = null, mMime = null, mName = null;
-        if(mediaFile) { mData = mediaFile.data; mMime = mediaFile.mimetype; mName = mediaFile.filename; }
+    async query(table, action, payload={}, match={}) {
+        if(!window.db) return null;
+        let q = window.db.from(table);
+        if(action === 'select') q = q.select(payload);
+        if(action === 'insert') q = q.insert(payload);
+        if(action === 'update') q = q.update(payload);
+        if(action === 'delete') q = q.delete();
         
-        const { data, error } = await db.from('campaigns').insert([{
-            name: name,
-            message: msg,
-            total_count: total,
-            sent_count: 0,
-            status: 'running',
-            media_data: mData,
-            media_mime: mMime,
-            media_name: mName
-        }]).select().single();
+        Object.keys(match).forEach(k => q = q.eq(k, match[k]));
         
-        if(error) { console.error("DB Error:", error); return null; }
-        return data.id;
+        const { data, error } = await q;
+        if(error) console.error("DB Error", error);
+        return error ? null : data;
     },
-
-    // NEW: Bulk insert into Queue Table (Persistence)
-    async addToQueue(campId, numbers) {
-        // Supabase allows bulk inserts. We map numbers to row objects.
-        const rows = numbers.map(n => ({ campaign_id: campId, number: n, status: 'pending' }));
-        // Insert in chunks of 500 to prevent packet size errors if list is huge
-        const chunkSize = 500;
-        for (let i = 0; i < rows.length; i += chunkSize) {
-            await db.from('campaign_queue').insert(rows.slice(i, i + chunkSize));
-        }
-    },
-
-    // NEW: Fetch a "Batch" of pending items
-    async getNextBatch(campId, size) {
-        const { data } = await db.from('campaign_queue')
-            .select('id, number')
-            .eq('campaign_id', campId)
-            .eq('status', 'pending')
-            .limit(size); // Respects the "Batch Size" setting
-        return data || [];
-    },
-
-    // NEW: Mark individual item as sent/failed
-    async updateQueueStatus(itemId, status) {
-        await db.from('campaign_queue').update({ status }).eq('id', itemId);
-    },
-
-    // NEW: Check for interrupted campaigns on boot
-    async getRunningCampaign() {
-        const { data } = await db.from('campaigns')
-            .select('*')
-            .eq('status', 'running')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
-        return data;
-    },
-
-    async incrementStats(id, type) {
-        // Simple increment logic
-        const { data } = await db.from('campaigns').select(`${type}_count`).eq('id', id).single();
-        if(data) {
-            const update = {};
-            update[`${type}_count`] = data[`${type}_count`] + 1;
-            await db.from('campaigns').update(update).eq('id', id);
-        }
-    },
-
-    async getCampaigns() {
-        // Fetches meaningful rows for the History Table
-        const { data } = await db.from('campaigns')
-            .select('id, name, created_at, sent_count, total_count, status, message, media_name')
-            .order('created_at', { ascending: false })
-            .limit(20);
-        return data || [];
-    },
-
-    async getCampaignFull(id) {
-        // Fetches the heavy media data only on demand
-        const { data } = await db.from('campaigns').select('*').eq('id', id).single();
-        return data;
-    },
-
-    async updateStatus(id, status) {
-        await db.from('campaigns').update({ status }).eq('id', id);
+    async getQueue(cID) { 
+        // Fetch pending items for specific campaign
+        return await this.query('campaign_queue', 'select', 'id, number', { campaign_id: cID, status: 'pending' }); 
     }
-    
 };
 
+// API Wrapper
 const Api = {
-    async req(endpoint, body) {
-        try {
-            const r = await fetch(`${CONFIG.API_BASE}/api/${endpoint}`, body ? {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-            } : {});
-            return r.ok ? await r.json() : null;
-        } catch (e) { return null; }
+    async req(ep, body) { 
+        try { 
+            const r = await fetch(`${window.CONFIG.API_BASE}/api/${ep}`, body ? { 
+                method: 'POST', 
+                headers: {'Content-Type':'application/json'}, 
+                body: JSON.stringify(body) 
+            } : {}); 
+            return r.ok ? await r.json() : null; 
+        } catch(e) { return null; } 
     }
 };
 
-const CoreUtils = {
-    async processFile(file) {
-        if (file.name.toLowerCase().endsWith('.heic') && window.heic2any) {
-            try { file = await heic2any({ blob: file, toType: "image/jpeg", quality: 1.0 }); } catch(e){}
+// Main Execution Engine
+const Engine = {
+    async start(campName, nums, msg) {
+        if(!nums || !nums.length) return Utils.toast("No valid numbers found", "err");
+        
+        Utils.toast("Initializing Campaign...", "info");
+
+        // 1. Create Campaign in DB
+        const camp = await DataStore.query('campaigns', 'insert', { 
+            name: campName || `Camp ${new Date().toLocaleTimeString()}`, 
+            message: msg, 
+            total_count: nums.length, 
+            status: 'running' 
+        }).then(d => d && d[0]);
+        
+        if(!camp) return Utils.toast("Database Write Failed", "err");
+        
+        State.activeCamp = camp.id;
+        this.updateDisplay(camp.id);
+        
+        // 2. Persist Queue (Bulk Insert)
+        Utils.toast(`Queueing ${nums.length} contacts...`, "info");
+        const rows = nums.map(n => ({ campaign_id: camp.id, number: n, status: 'pending' }));
+        
+        // Chunk insert to respect DB limits
+        const chunkSize = 500; 
+        for (let i = 0; i < rows.length; i += chunkSize) {
+            await DataStore.query('campaign_queue', 'insert', rows.slice(i, i + chunkSize));
         }
-        return new Promise(resolve => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = () => resolve({ mimetype: file.type, data: reader.result.split(',')[1], filename: file.name });
-        });
+
+        Utils.toast("Engine Started", "success");
+        this.toggle(true);
     },
-    exportCSV(name, dataPromise) {
-        Promise.resolve(dataPromise).then(result => {
-            const data = result.contacts || result; 
-            const csvContent = "data:text/csv;charset=utf-8," + "Name,Number\n" + data.map(e => `${e.name},${e.number}`).join("\n");
-            const link = document.createElement("a");
-            link.setAttribute("href", encodeURI(csvContent));
-            link.setAttribute("download", `${name}.csv`);
-            document.body.appendChild(link); link.click(); document.body.removeChild(link);
-        });
+
+    async process() {
+        if(!State.running || !State.activeCamp) return;
+        
+        // Fetch next batch dynamically
+        const limit = parseInt(State.settings.batch) || 10;
+        const allPending = await DataStore.getQueue(State.activeCamp);
+        const batch = allPending ? allPending.slice(0, limit) : [];
+        
+        if(!batch.length) {
+            await DataStore.query('campaigns', 'update', { status: 'completed' }, { id: State.activeCamp });
+            Utils.toast("Campaign Finished", "success");
+            return this.toggle(false);
+        }
+
+        Utils.log(`Processing Batch (${batch.length})`, 'info');
+        
+        // Execute Batch
+        for(const item of batch) {
+            if(!State.running) break;
+            
+            // Dynamic check for message content (allows live editing)
+            const liveMsg = document.getElementById('camp-msg') ? document.getElementById('camp-msg').value : "";
+            
+            const res = await Api.req('send', { 
+                id: State.user, 
+                number: item.number, 
+                message: liveMsg, 
+                file: State.file 
+            });
+            
+            const status = res ? 'sent' : 'failed';
+            
+            // Atomic Status Update
+            await DataStore.query('campaign_queue', 'update', { status }, { id: item.id });
+            
+            // UI Stats Update
+            const statEl = document.getElementById(status === 'sent' ? 'stat-sent' : 'stat-stored');
+            if(statEl) statEl.innerText = (parseInt(statEl.innerText) || 0) + 1;
+            
+            Utils.log(`${item.number} > ${status.toUpperCase()}`, status === 'sent' ? 'success' : 'err');
+            
+            // Jitter Delay (Anti-Ban)
+            await new Promise(r => setTimeout(r, Math.random() * 2000 + 1000));
+        }
+
+        // Cooldown Loop
+        if(State.running) {
+            const cool = parseInt(State.settings.cool) || 60;
+            Utils.log(`Cooldown: ${cool}s...`);
+            setTimeout(() => this.process(), cool * 1000);
+        }
+    },
+
+    toggle(forceState) {
+        State.running = forceState !== undefined ? forceState : !State.running;
+        const btn = document.getElementById('btn-engine-toggle');
+        if(btn) btn.innerText = State.running ? "PAUSE" : "RESUME";
+        
+        const indicator = document.getElementById('queue-mini');
+        if(indicator) indicator.innerText = State.running ? "RUNNING" : "IDLE";
+        
+        if(State.running) this.process();
+    },
+
+    updateDisplay(id) {
+        const el = document.getElementById('active-camp-display');
+        if(el) el.innerText = id ? `ID: ${id.slice(0,8)}...` : "IDLE";
+    },
+
+    async checkRecovery() {
+        // Auto-Recovery on Page Load
+        const active = await DataStore.query('campaigns', 'select', '*', { status: 'running' });
+        if(active && active.length) {
+            if(confirm(`Nexus found an interrupted campaign "${active[0].name}". Resume it?`)) {
+                State.activeCamp = active[0].id;
+                this.updateDisplay(active[0].id);
+                
+                const msgInput = document.getElementById('camp-msg');
+                if(msgInput) msgInput.value = active[0].message;
+                
+                Utils.toast("State Recovered. Click RESUME.", "success");
+            }
+        }
+    }
+};
+
+// Session & Connection Manager
+const Session = {
+    async check() {
+        const res = await Api.req(`status/${State.user}`);
+        const dot = document.getElementById('conn-dot');
+        const qrCanvas = document.getElementById('qr-canvas');
+        const qrModal = document.getElementById('modal-qr');
+        
+        if(!dot) return;
+
+        if(res?.status === 'READY') { 
+            dot.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]"; 
+            if(qrModal) qrModal.classList.add('hidden');
+        }
+        else if(res?.status === 'QR_READY') { 
+            dot.className = "w-2 h-2 rounded-full bg-blue-500 animate-pulse"; 
+            // Auto-show QR if we have the library loaded
+            if(res.qr && window.QRious && qrCanvas) {
+                new QRious({ element: qrCanvas, value: res.qr, size: 200 });
+            }
+        }
+        else { 
+            dot.className = "w-2 h-2 rounded-full bg-slate-300"; 
+        }
     }
 };
