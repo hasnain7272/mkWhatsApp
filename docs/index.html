@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Nexus OS | v3.3 Hive</title>
+    <title>Nexus OS | v4.0 Sync</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
@@ -18,8 +18,6 @@
         .no-scrollbar { -ms-overflow-style: none;  scrollbar-width: none; }
         .fade-in { animation: fadeIn 0.3s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        .loader { width: 12px; height: 12px; border: 2px solid #FFF; border-bottom-color: transparent; border-radius: 50%; display: inline-block; box-sizing: border-box; animation: rotation 1s linear infinite; }
-        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 h-screen w-full flex overflow-hidden selection:bg-brand-500 selection:text-white">
@@ -29,13 +27,13 @@
 
     <aside id="sidebar" class="fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 -translate-x-full md:translate-x-0 shadow-2xl md:shadow-none">
         <div class="h-16 flex items-center px-6 border-b border-slate-100 shrink-0">
-            <div class="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-brand-500/30"><i data-lucide="layers" class="w-5 h-5"></i></div>
-            <div><h1 class="font-bold text-lg tracking-tight">Nexus OS</h1><span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">v3.3 Hive</span></div>
+            <div class="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-brand-500/30"><i data-lucide="zap" class="w-5 h-5"></i></div>
+            <div><h1 class="font-bold text-lg tracking-tight">Nexus OS</h1><span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">v4.0 Sync</span></div>
             <button onclick="UI.toggleSidebar()" class="ml-auto md:hidden text-slate-400 p-2"><i data-lucide="x" class="w-5 h-5"></i></button>
         </div>
         <div class="flex-1 p-4 overflow-y-auto space-y-6">
             <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                <div class="flex items-center justify-between mb-3"><span class="text-[10px] uppercase font-bold text-slate-400">Session</span><span id="conn-dot" class="w-2 h-2 rounded-full bg-slate-300"></span></div>
+                <div class="flex items-center justify-between mb-3"><span class="text-[10px] uppercase font-bold text-slate-400">Connection</span><span id="conn-dot" class="w-2 h-2 rounded-full bg-slate-300"></span></div>
                 <div class="grid grid-cols-2 gap-2 mb-3">
                     <button onclick="Session.switch('client-1')" id="btn-c1" class="py-2 text-[10px] font-bold rounded-lg border">NODE 1</button>
                     <button onclick="Session.switch('client-2')" id="btn-c2" class="py-2 text-[10px] font-bold rounded-lg border">NODE 2</button>
@@ -43,23 +41,21 @@
                 <div id="action-area"></div>
             </div>
             <nav class="space-y-1">
-                <p class="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Menu</p>
-                <button onclick="Router.go('dashboard')" id="nav-dashboard" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="layout-grid" class="w-4 h-4"></i> Dashboard</button>
-                <button onclick="Router.go('campaigns')" id="nav-campaigns" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="megaphone" class="w-4 h-4"></i> Campaigns</button>
-                <button onclick="Router.go('contacts')" id="nav-contacts" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="book-user" class="w-4 h-4"></i> Contacts</button>
+                <button onclick="Router.go('campaigns')" id="nav-campaigns" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="layout-dashboard" class="w-4 h-4"></i> Campaign Manager</button>
+                <button onclick="Router.go('contacts')" id="nav-contacts" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="users" class="w-4 h-4"></i> Contacts</button>
                 <button onclick="Router.go('settings')" id="nav-settings" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="settings" class="w-4 h-4"></i> Config</button>
             </nav>
         </div>
         <div class="p-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
-            <div class="flex justify-between items-center mb-2"><span class="text-[10px] font-bold text-slate-500 uppercase">Engine Status</span><span id="engine-status-mini" class="text-[10px] font-bold text-slate-400">IDLE</span></div>
-            <div class="w-full bg-slate-200 h-1 rounded-full"><div id="global-progress" class="h-full bg-slate-400 w-0 transition-all"></div></div>
+            <div class="flex justify-between items-center mb-2"><span class="text-[10px] font-bold text-slate-500 uppercase">DB Queue Status</span><span id="db-status-text" class="text-[10px] font-bold text-slate-400">IDLE</span></div>
+            <div class="w-full bg-slate-200 h-1 rounded-full"><div id="db-progress-bar" class="h-full bg-slate-400 w-0 transition-all"></div></div>
         </div>
     </aside>
 
     <main class="flex-1 relative flex flex-col h-full overflow-hidden w-full bg-white md:bg-slate-50/30 md:ml-72 transition-all">
         <header class="h-16 px-4 md:px-8 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-30">
-            <div class="flex items-center gap-3"><button onclick="UI.toggleSidebar()" class="md:hidden p-2 -ml-2 text-slate-600"><i data-lucide="menu" class="w-5 h-5"></i></button><h2 id="page-title" class="text-lg md:text-xl font-bold text-slate-800">Dashboard</h2></div>
-            <div class="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600 shadow-sm flex items-center gap-2"><span id="status-light" class="w-2 h-2 rounded-full bg-slate-300"></span><span>Mode: <span class="text-brand-600">Persistent</span></span></div>
+            <div class="flex items-center gap-3"><button onclick="UI.toggleSidebar()" class="md:hidden p-2 -ml-2 text-slate-600"><i data-lucide="menu" class="w-5 h-5"></i></button><h2 id="page-title" class="text-lg md:text-xl font-bold text-slate-800">Manager</h2></div>
+            <div class="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600 shadow-sm flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span><span>Live Sync</span></div>
         </header>
 
         <div class="flex-1 overflow-y-auto p-4 md:p-6 relative no-scrollbar">
@@ -67,143 +63,124 @@
             <div id="modal-qr" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 fade-in">
                 <div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-sm text-center border border-slate-100">
                     <canvas id="qr-canvas" class="mx-auto mb-4 border p-2 rounded-lg"></canvas>
-                    <h3 class="font-bold text-lg text-slate-800">Scan QR Code</h3>
-                    <button onclick="document.getElementById('modal-qr').classList.add('hidden')" class="mt-4 px-6 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">Close</button>
+                    <button onclick="document.getElementById('modal-qr').classList.add('hidden')" class="px-6 py-2 bg-slate-100 rounded-lg text-xs font-bold">Close</button>
                 </div>
             </div>
 
-            <div id="modal-edit" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4 fade-in">
-                <div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-100 flex flex-col h-[500px]">
-                    <div class="flex justify-between items-center mb-2"><h3 class="font-bold text-lg text-slate-800">Manual Entry</h3><button onclick="Database.closeEdit()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button></div>
-                    <input type="hidden" id="edit-key-hidden">
-                    <textarea id="edit-area" class="flex-1 w-full bg-slate-50 border border-slate-200 rounded-lg p-4 text-xs font-mono outline-none focus:border-brand-500 resize-none mb-4" placeholder="Enter contacts here..."></textarea>
-                    <button onclick="Database.saveEdit()" class="w-full py-2.5 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700 transition-colors">Save Changes</button>
-                </div>
-            </div>
+            <div id="view-campaigns" class="max-w-7xl mx-auto h-full flex flex-col md:flex-row gap-6 fade-in">
+                
+                <div class="w-full md:w-[400px] flex flex-col gap-4 shrink-0 overflow-y-auto">
+                    <div class="bg-white border border-slate-200 p-5 rounded-xl shadow-sm">
+                        <h3 class="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2"><i data-lucide="plus-circle" class="w-4 h-4 text-brand-500"></i> New Campaign</h3>
+                        
+                        <div class="mb-3">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase">Target Lists</label>
+                            <select id="camp-source-selector" onchange="CampBuilder.addList(this)" class="w-full mt-1 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-2.5 outline-none font-bold text-slate-600 focus:border-brand-500">
+                                <option value="">+ Add List to Queue</option>
+                            </select>
+                            <div id="camp-tags-area" class="flex flex-wrap gap-1.5 mt-2 min-h-[30px]"></div>
+                        </div>
 
-            <div id="view-dashboard" class="max-w-6xl mx-auto space-y-6 fade-in">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="database" class="w-4 h-4 text-brand-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Cloud Lists</span></div><p id="stat-stored" class="text-3xl font-bold text-slate-800 tracking-tight">0</p></div>
-                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="server" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">System Type</span></div><p class="text-3xl font-bold text-slate-800 tracking-tight">Hybrid</p></div>
-                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Core</span></div><p class="text-3xl font-bold text-slate-800 tracking-tight">v3.3</p></div>
-                </div>
-            </div>
+                        <div class="mb-3">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase">Manual Numbers</label>
+                            <textarea id="camp-manual" class="w-full mt-1 bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-mono outline-none focus:border-brand-500 resize-none h-20" placeholder="Paste numbers..."></textarea>
+                        </div>
 
-            <div id="view-campaigns" class="hidden h-full flex flex-col fade-in">
-                <div class="flex bg-slate-100 p-1 rounded-lg mb-4 shrink-0 md:max-w-sm">
-                    <button onclick="UI.setCampTab('launch')" id="tab-camp-launch" class="flex-1 py-1.5 text-xs font-bold rounded-md bg-white shadow-sm text-slate-800 transition-all">Builder</button>
-                    <button onclick="UI.setCampTab('monitor')" id="tab-camp-monitor" class="flex-1 py-1.5 text-xs font-bold rounded-md text-slate-500 transition-all">Monitor</button>
-                    <button onclick="UI.setCampTab('history')" id="tab-camp-history" class="flex-1 py-1.5 text-xs font-bold rounded-md text-slate-500 transition-all">History</button>
+                        <div class="mb-3">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase">Message</label>
+                            <input id="camp-name" type="text" class="w-full mb-2 bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs font-bold" placeholder="Campaign Name">
+                            <textarea id="camp-msg" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs outline-none focus:border-brand-500 resize-none h-24" placeholder="Hello..."></textarea>
+                        </div>
+
+                        <div onclick="document.getElementById('camp-file').click()" class="border border-dashed border-slate-300 rounded-lg p-2.5 flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 mb-4">
+                            <i data-lucide="paperclip" class="w-4 h-4 text-slate-400"></i><span id="file-name" class="text-xs font-bold text-slate-500 truncate">Attach Media</span><input type="file" id="camp-file" class="hidden" onchange="Engine.handleFile(this)">
+                        </div>
+
+                        <button onclick="Engine.launch()" class="w-full py-3 bg-brand-600 text-white rounded-xl font-bold shadow-lg hover:bg-brand-700 transition-all flex justify-center gap-2"><i data-lucide="rocket" class="w-4 h-4"></i> Create & Launch</button>
+                    </div>
                 </div>
 
-                <div id="panel-camp-launch" class="flex-1 flex flex-col md:flex-row gap-6 h-full overflow-hidden">
-                    <div class="w-full max-w-2xl mx-auto flex flex-col gap-4 overflow-y-auto pb-10">
-                        <div class="bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
-                            <h3 class="font-bold text-slate-800 text-sm mb-4">Step 1: Audience & Deduplication</h3>
-                            <div class="flex gap-2 mb-3">
-                                <select id="camp-source-list" class="flex-1 text-xs bg-slate-50 border border-slate-200 rounded px-2 py-2 outline-none font-medium text-slate-600 focus:border-brand-500"><option value="">Select a Cloud List...</option></select>
-                                <button onclick="CampBuilder.addList()" class="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-900">+ Add</button>
+                <div class="flex-1 flex flex-col gap-4 overflow-hidden h-full">
+                    
+                    <div id="monitor-panel" class="hidden bg-slate-900 text-white p-5 rounded-xl shadow-lg shrink-0">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h2 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Active Campaign</h2>
+                                <h1 id="mon-name" class="text-lg font-bold text-white">Loading...</h1>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                    <span id="mon-status" class="text-xs font-mono text-emerald-400">PROCESSING DB QUEUE</span>
+                                </div>
                             </div>
-                            <div id="camp-sources-area" class="flex flex-wrap gap-2 mb-4 min-h-[40px] p-2 border border-dashed border-slate-200 rounded-lg bg-slate-50"><span class="text-[10px] text-slate-400 self-center italic pl-2">No lists selected.</span></div>
-                            <textarea id="camp-manual-input" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-mono outline-none focus:border-brand-500 resize-none h-24 mb-2" placeholder="Paste extra numbers here (optional)..."></textarea>
-                        </div>
-                        <div class="bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
-                            <h3 class="font-bold text-slate-800 text-sm mb-4">Step 2: Content & Launch</h3>
-                            <input id="camp-name" type="text" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs font-bold mb-3" placeholder="Campaign Name (e.g. Sept Offer)">
-                            <input id="camp-msg" type="text" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500 mb-3" placeholder="Message content...">
-                            <div onclick="document.getElementById('camp-file').click()" class="border border-dashed border-slate-300 rounded-lg p-3 flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 mb-4">
-                                <i data-lucide="paperclip" class="w-4 h-4 text-slate-400"></i><span id="file-name" class="text-xs font-bold text-slate-500 truncate">Attach Media (Optional)</span><input type="file" id="camp-file" class="hidden" onchange="Engine.handleFile(this)">
+                            <div class="text-right">
+                                <button onclick="Engine.pauseActive()" class="text-[10px] font-bold bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-white border border-slate-600">PAUSE / STOP</button>
                             </div>
-                            <button onclick="Engine.compileAndLaunch()" class="w-full py-3 bg-brand-600 text-white rounded-xl font-bold shadow-lg hover:bg-brand-700 transition-all flex justify-center gap-2"><i data-lucide="rocket" class="w-4 h-4"></i> Compile & Launch</button>
+                        </div>
+                        <div class="grid grid-cols-3 gap-4 border-t border-slate-800 pt-4">
+                            <div><span class="text-[10px] text-slate-500 uppercase">Total</span><p id="mon-total" class="text-xl font-bold">0</p></div>
+                            <div><span class="text-[10px] text-slate-500 uppercase">Sent</span><p id="mon-sent" class="text-xl font-bold text-emerald-400">0</p></div>
+                            <div><span class="text-[10px] text-slate-500 uppercase">Failed</span><p id="mon-fail" class="text-xl font-bold text-red-400">0</p></div>
                         </div>
                     </div>
-                </div>
 
-                <div id="panel-camp-monitor" class="hidden flex-1 flex flex-col gap-4 overflow-hidden max-w-4xl mx-auto w-full">
-                    <div class="bg-slate-900 text-white p-6 rounded-xl shadow-lg shrink-0 flex justify-between items-center">
-                        <div>
-                            <h2 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Live Dispatcher</h2>
-                            <div class="flex items-center gap-3"><span id="monitor-camp-name" class="text-xl font-bold text-white">System Idle</span><span id="monitor-badge" class="px-2 py-0.5 rounded bg-slate-700 text-[10px] font-bold text-slate-400">WAITING</span></div>
+                    <div class="flex-1 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+                        <div class="px-5 py-3 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <h3 class="font-bold text-sm text-slate-700">Campaign History</h3>
+                            <button onclick="Engine.refreshHistory()" class="text-slate-400 hover:text-brand-600"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
                         </div>
-                        <div class="text-right"><p class="text-[10px] text-slate-400 uppercase">Engine Health</p><p class="text-2xl font-mono font-bold text-emerald-400">100%</p></div>
-                    </div>
-                    <div class="grid grid-cols-3 gap-4 shrink-0">
-                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><span class="text-[10px] font-bold text-slate-400 uppercase">Current Batch</span><div class="w-full bg-slate-100 h-2 rounded-full mt-2 mb-1 overflow-hidden"><div id="batch-bar" class="h-full bg-brand-500 w-0 transition-all duration-300"></div></div></div>
-                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center"><span class="text-[10px] font-bold text-slate-400 uppercase">Success</span><span id="monitor-success" class="text-lg font-bold text-emerald-600">0</span></div>
-                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center"><span class="text-[10px] font-bold text-slate-400 uppercase">Fail</span><span id="monitor-fail" class="text-lg font-bold text-red-600">0</span></div>
-                    </div>
-                    <div class="flex-1 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden flex flex-col">
-                        <div class="px-4 py-2 border-b border-slate-200 bg-white/50 flex justify-between items-center"><span class="text-[10px] font-bold text-slate-500 uppercase">Telemetry Logs</span><button onclick="document.getElementById('console-logs').innerHTML=''" class="text-[10px] text-slate-400 hover:text-slate-600">Clear</button></div>
-                        <div id="console-logs" class="flex-1 overflow-y-auto p-4 space-y-1 font-mono text-xs"></div>
-                    </div>
-                </div>
-
-                <div id="panel-camp-history" class="hidden flex-1 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
-                    <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50"><h3 class="font-bold text-sm text-slate-700">Campaign Manager</h3><button onclick="Engine.refreshCampaigns()" class="p-2 hover:bg-white rounded-lg text-slate-500 border border-transparent hover:border-slate-200"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button></div>
-                    <div class="flex-1 overflow-auto">
-                        <table class="w-full text-left">
-                            <thead class="bg-slate-50 border-b border-slate-200 sticky top-0">
-                                <tr>
-                                    <th class="px-6 py-3 text-[10px] font-bold text-slate-500 uppercase">Name</th>
-                                    <th class="px-6 py-3 text-[10px] font-bold text-slate-500 uppercase">Progress</th>
-                                    <th class="px-6 py-3 text-[10px] font-bold text-slate-500 uppercase">Status</th>
-                                    <th class="px-6 py-3 text-[10px] font-bold text-slate-500 uppercase text-right">Control</th>
-                                </tr>
-                            </thead>
-                            <tbody id="history-table-body" class="divide-y divide-slate-100"></tbody>
-                        </table>
+                        <div class="flex-1 overflow-auto">
+                            <table class="w-full text-left">
+                                <thead class="bg-slate-50 border-b border-slate-200 sticky top-0">
+                                    <tr>
+                                        <th class="px-5 py-3 text-[10px] font-bold text-slate-500 uppercase">Name</th>
+                                        <th class="px-5 py-3 text-[10px] font-bold text-slate-500 uppercase">Progress (DB)</th>
+                                        <th class="px-5 py-3 text-[10px] font-bold text-slate-500 uppercase">Status</th>
+                                        <th class="px-5 py-3 text-[10px] font-bold text-slate-500 uppercase text-right">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="history-body" class="divide-y divide-slate-100"></tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <div id="view-contacts" class="hidden h-full flex flex-col fade-in">
-                <div class="flex md:hidden bg-slate-100 p-1 rounded-lg mb-4 shrink-0"><button onclick="UI.setContactTab('list')" id="tab-list" class="flex-1 py-1.5 text-xs font-bold rounded-md bg-white shadow-sm text-slate-800">Search</button><button onclick="UI.setContactTab('tools')" id="tab-tools" class="flex-1 py-1.5 text-xs font-bold rounded-md text-slate-500">Lists & Tools</button></div>
-                <div class="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
-                    <div id="cont-panel-list" class="flex-1 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col overflow-hidden h-full">
-                        <div class="p-3 border-b border-slate-100 flex gap-2 shrink-0"><div class="relative flex-1"><i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-slate-400"></i><input type="text" id="contact-search" onkeyup="ContactManager.filter()" placeholder="Search..." class="pl-9 w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500"></div><button onclick="ContactManager.sync()" id="btn-sync" class="px-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button></div>
-                        <div class="px-4 py-2 bg-slate-50/80 border-b border-slate-100 flex justify-between shrink-0"><span class="text-[10px] font-bold text-slate-400 uppercase">Memory: <span id="count-all">0</span></span><span class="text-[10px] font-bold text-brand-600 uppercase">Selected: <span id="sel-count">0</span></span></div>
-                        <div id="contact-list-container" class="flex-1 overflow-y-auto p-2 space-y-1"><div class="text-center mt-20 text-slate-400 text-xs">Sync contacts to build Global Memory.</div></div>
-                    </div>
-                    <div id="cont-panel-tools" class="hidden md:flex flex-col gap-4 w-full md:w-[320px] shrink-0 h-full overflow-y-auto">
-                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm shrink-0"><h3 class="font-bold text-slate-700 text-sm mb-3">List Manager</h3><input type="text" id="new-list-name" placeholder="List Name..." class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:border-brand-500 mb-2"><div class="grid grid-cols-2 gap-2"><button onclick="ContactManager.saveSelection()" class="py-2 bg-brand-600 text-white rounded-lg text-xs font-bold hover:bg-brand-700">Save / Update</button><button onclick="ContactManager.clearSelection()" class="py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50">Clear</button></div></div>
-                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[200px]"><div class="flex justify-between items-center mb-3"><h3 class="font-bold text-slate-700 text-sm">Saved Lists</h3><button onclick="Database.createNewEmpty()" class="text-[10px] font-bold text-brand-600 bg-brand-50 px-2 py-1 rounded hover:bg-brand-100">+ Manual List</button></div><div id="contact-grid" class="flex-1 overflow-y-auto space-y-2 pr-1"></div></div>
-                    </div>
+                <div class="bg-white p-10 text-center rounded-xl border border-slate-200"><h2 class="font-bold text-slate-400">Contact Manager Available</h2></div>
+            </div>
+            <div id="view-settings" class="hidden h-full fade-in">
+                <div class="max-w-lg mx-auto bg-white p-6 rounded-xl border border-slate-200">
+                    <h3 class="font-bold mb-4">Engine Config</h3>
+                    <div class="mb-4"><label class="text-xs font-bold text-slate-500">Batch Size</label><input type="range" class="w-full" onchange="Settings.save('batch', this.value)"><span id="val-batch" class="text-xs font-bold float-right text-brand-600">10</span></div>
+                    <div class="mb-4"><label class="text-xs font-bold text-slate-500">Cool Down (s)</label><input type="range" class="w-full" onchange="Settings.save('cool', this.value)"><span id="val-cool" class="text-xs font-bold float-right text-brand-600">60</span></div>
                 </div>
             </div>
 
-            <div id="view-settings" class="hidden max-w-xl mx-auto fade-in">
-                <div class="bg-white p-8 rounded-xl border border-slate-200 shadow-sm">
-                    <h3 class="font-bold text-lg text-slate-800 mb-6">Configuration</h3>
-                    <div class="space-y-6">
-                        <div><div class="flex justify-between mb-2"><label class="text-xs font-bold text-slate-600">Batch Size (Anti-Ban)</label><span id="val-batch" class="text-xs font-bold text-brand-600">10</span></div><input type="range" min="1" max="50" value="10" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" oninput="Settings.save('batch', this.value)"></div>
-                        <div><div class="flex justify-between mb-2"><label class="text-xs font-bold text-slate-600">Cool-down (s)</label><span id="val-cool" class="text-xs font-bold text-brand-600">60</span></div><input type="range" min="10" max="300" value="60" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" oninput="Settings.save('cool', this.value)"></div>
-                    </div>
-                </div>
-            </div>
         </div>
     </main>
-
     <script src="nexus-core.js"></script>
-
     <script>
         (async () => {
             try {
+                // Init
                 const _cfg = await fetch('https://mkwhatsapp.onrender.com/api/init').then(r => r.json());
                 window.CONFIG = { API_BASE: "", ..._cfg };
-                const { createClient } = supabase;
-                window.db = createClient(window.CONFIG.SUPABASE_URL, window.CONFIG.SUPABASE_KEY);
+                window.db = supabase.createClient(window.CONFIG.SUPABASE_URL, window.CONFIG.SUPABASE_KEY);
+                
+                // Boot
                 lucide.createIcons();
                 Session.renderBtn();
-                Database.render();
+                Database.renderListSelector();
                 Session.check();
-                setInterval(() => Session.check(), 5000);
-                setTimeout(() => Engine.poll(), 2000); // Start Engine Heartbeat
-                Router.go('dashboard');
-                console.log("Nexus OS: v3.3 Hive Loaded");
-            } catch(e) {
-                console.error(e);
-                document.body.innerHTML = `<div class="p-10 text-center font-bold text-red-600">Fatal: Config Load Failed. Check Backend.</div>`;
-            }
+                setInterval(() => Session.check(), 5000); // Connection Heartbeat
+                
+                // THE NEW SYNC ENGINE
+                setInterval(() => Engine.syncMonitor(), 2000); // UI Sync
+                setTimeout(() => Engine.processQueue(), 1000); // Worker Loop
+
+                Router.go('campaigns');
+                console.log("Nexus OS: v4.0 Sync Active");
+            } catch(e) { console.error(e); }
         })();
     </script>
 </body>
