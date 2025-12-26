@@ -1,7 +1,6 @@
 /**
- * NEXUS CORE v3.2 | "THE MONOLITH"
- * Full Feature Parity: Contacts, Lists, Campaigns, Queue, Session.
- * Dynamic Configuration: 0 Hardcoded Values.
+ * NEXUS CORE v3.3 | "THE HIVE" 
+ * Architecture: Multi-List Deduplication, Individual Campaign Control, Optimistic Queueing.
  */
 
 // --- 1. GLOBAL STATE ---
@@ -9,14 +8,17 @@ const State = {
     user: 'client-1', 
     status: 'OFFLINE', 
     qr: null, 
-    activeFile: null, 
-    isRunning: false, 
+    activeFile: null,
     settings: { batch: 10, cool: 60 }, 
     allContacts: [], 
     selection: new Set(), 
-    tempMemory: new Map(), 
-    activeCampaignId: null, 
-    historyCache: [] 
+    tempMemory: new Map(),
+    
+    // Campaign Builder Context
+    campBuilder: { lists: [], manual: "" },
+    
+    // Engine Context
+    engine: { running: false }
 };
 
 // --- 2. UTILS ---
@@ -25,14 +27,17 @@ const Utils = {
         const c = document.getElementById('toasts');
         if(!c) return;
         const el = document.createElement('div'); 
-        el.className = `${type === 'success' ? 'bg-emerald-600' : 'bg-slate-800'} text-white px-4 py-3 rounded-lg shadow-xl text-xs font-bold animate-bounce fade-in`; 
+        el.className = `${type === 'success' ? 'bg-emerald-600' : (type==='error'?'bg-red-600':'bg-slate-800')} text-white px-4 py-3 rounded-lg shadow-xl text-xs font-bold animate-bounce fade-in`; 
         el.innerText = msg; 
         c.appendChild(el); 
         setTimeout(() => el.remove(), 3000); 
     },
     log: (html) => {
         const l = document.getElementById('console-logs');
-        if(l) l.innerHTML = html + l.innerHTML;
+        if(l) {
+            l.innerHTML += html;
+            l.scrollTop = l.scrollHeight; 
+        }
     }
 };
 
@@ -62,37 +67,53 @@ const Api = {
 };
 
 const DataStore = {
-    // Helper for Supabase Calls
     q(table) { return window.db.from(table); },
 
-    // LISTS (Contact Manager)
+    // LISTS
     async getLists() { const { data } = await this.q('lists').select('id, name, contacts').order('created_at', { ascending: false }); return data ? data.map(i => ({ id: i.id, name: i.name, count: i.contacts ? i.contacts.length : 0 })) : []; },
     async getListContent(id) { const { data } = await this.q('lists').select('name, contacts').eq('id', id).single(); return data || { name: '', contacts: [] }; },
     async saveList(name, contacts) { const { data: existing } = await this.q('lists').select('id').eq('name', name).maybeSingle(); if (existing) await this.q('lists').update({ contacts }).eq('id', existing.id); else await this.q('lists').insert([{ name, contacts }]); },
     async deleteList(id) { await this.q('lists').delete().eq('id', id); },
 
-    // CAMPAIGNS & QUEUE
+    // CAMPAIGNS
     async createCampaign(name, msg, total, mediaFile) {
         let mData = null, mMime = null, mName = null;
         if(mediaFile) { mData = mediaFile.data; mMime = mediaFile.mimetype; mName = mediaFile.filename; }
-        const { data, error } = await this.q('campaigns').insert([{ name, message: msg, total_count: total, sent_count: 0, status: 'running', media_data: mData, media_mime: mMime, media_name: mName }]).select().single();
+        const { data, error } = await this.q('campaigns').insert([{ name, message: msg, total_count: total, sent_count: 0, failed_count: 0, status: 'paused', media_data: mData, media_mime: mMime, media_name: mName }]).select().single();
         return error ? null : data.id;
     },
     async addToQueue(campId, numbers) {
+        // Optimized Chunking (1000 limit)
         const rows = numbers.map(n => ({ campaign_id: campId, number: n, status: 'pending' }));
-        for (let i = 0; i < rows.length; i += 500) await this.q('campaign_queue').insert(rows.slice(i, i + 500));
+        for (let i = 0; i < rows.length; i += 1000) await this.q('campaign_queue').insert(rows.slice(i, i + 1000));
     },
-    async getNextBatch(campId, size) { const { data } = await this.q('campaign_queue').select('id, number').eq('campaign_id', campId).eq('status', 'pending').limit(size); return data || []; },
-    async updateQueueStatus(itemId, status) { await this.q('campaign_queue').update({ status }).eq('id', itemId); },
-    async updateStats(id, type) { 
-        // Optimized: Increment logic in memory for UI, DB for persistence
-        const { data } = await this.q('campaigns').select(`${type}_count`).eq('id', id).single(); 
-        if(data) await this.q('campaigns').update({ [`${type}_count`]: data[`${type}_count`] + 1 }).eq('id', id); 
+    async getNextBatch(campId, size) { 
+        const { data } = await this.q('campaign_queue').select('id, number').eq('campaign_id', campId).eq('status', 'pending').limit(size); 
+        return data || []; 
     },
-    async updateStatus(id, status) { await this.q('campaigns').update({ status }).eq('id', id); },
-    async getCampaigns() { const { data } = await this.q('campaigns').select('id, name, created_at, sent_count, total_count, status, message, media_name').order('created_at', { ascending: false }).limit(20); return data || []; },
-    async getCampaignFull(id) { const { data } = await this.q('campaigns').select('*').eq('id', id).single(); return data; },
-    async getRunning() { const { data } = await this.q('campaigns').select('*').eq('status', 'running').order('created_at', { ascending: false }).limit(1).single(); return data; }
+    
+    // BULK UPDATES
+    async batchUpdateStatus(successIds, failIds) {
+        if(successIds.length) await this.q('campaign_queue').update({ status: 'sent', updated_at: new Date() }).in('id', successIds);
+        if(failIds.length) await this.q('campaign_queue').update({ status: 'failed', updated_at: new Date() }).in('id', failIds);
+    },
+    async incrementStats(campId, sentDelta, failDelta) {
+        const { data } = await this.q('campaigns').select('sent_count, failed_count').eq('id', campId).single();
+        if(data) {
+            await this.q('campaigns').update({ 
+                sent_count: data.sent_count + sentDelta,
+                failed_count: data.failed_count + failDelta
+            }).eq('id', campId);
+        }
+    },
+
+    // CONTROL
+    async setCampaignStatus(id, status) { await this.q('campaigns').update({ status }).eq('id', id); },
+    async getCampaigns() { const { data } = await this.q('campaigns').select('*').order('created_at', { ascending: false }).limit(50); return data || []; },
+    async getActiveCampaign() { 
+        const { data } = await this.q('campaigns').select('*').eq('status', 'running').order('created_at', { ascending: false }).limit(1).single(); 
+        return data; 
+    }
 };
 
 // --- 4. ENGINE CORE ---
@@ -110,153 +131,170 @@ const CoreUtils = {
     }
 };
 
+const CampBuilder = {
+    addList() {
+        const sel = document.getElementById('camp-source-list');
+        if(!sel.value) return;
+        const text = sel.options[sel.selectedIndex].text;
+        State.campBuilder.lists.push({ id: sel.value, name: text });
+        this.renderTags();
+        sel.value = "";
+    },
+    removeList(idx) {
+        State.campBuilder.lists.splice(idx, 1);
+        this.renderTags();
+    },
+    renderTags() {
+        const area = document.getElementById('camp-sources-area');
+        if(!State.campBuilder.lists.length) { area.innerHTML = `<span class="text-[10px] text-slate-400 self-center italic pl-2">No lists selected.</span>`; return; }
+        area.innerHTML = State.campBuilder.lists.map((l, i) => 
+            `<span class="bg-brand-100 text-brand-700 px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1">
+                ${l.name} <button onclick="CampBuilder.removeList(${i})" class="hover:text-red-600"><i data-lucide="x" class="w-3 h-3"></i></button>
+            </span>`
+        ).join('');
+    }
+};
+
 const Engine = {
     handleFile(i) { if(i.files[0]) { document.getElementById('file-name').innerText = i.files[0].name; CoreUtils.processFile(i.files[0]).then(f => State.activeFile = f); } },
 
-    async createAndQueue() {
-        const raw = document.getElementById('camp-input').value;
-        const msg = document.getElementById('camp-msg').value;
+    async compileAndLaunch() {
         const name = document.getElementById('camp-name').value || `Campaign ${new Date().toLocaleTimeString()}`;
-        const nums = raw.match(/\d{10,}/g) || [];
+        const msg = document.getElementById('camp-msg').value;
+        const manual = document.getElementById('camp-manual-input').value;
+
+        const numberSet = new Set();
+        const manualNums = manual.match(/\d{10,}/g) || [];
+        manualNums.forEach(n => numberSet.add(n));
+
+        for (const list of State.campBuilder.lists) {
+            Utils.toast(`Fetching list: ${list.name}...`);
+            const content = await DataStore.getListContent(list.id);
+            if(content && content.contacts) content.contacts.forEach(c => numberSet.add(c.number));
+        }
+
+        const uniqueNumbers = Array.from(numberSet);
+        if(!uniqueNumbers.length) return Utils.toast("No valid numbers found!", "error");
+
+        Utils.toast(`Queueing ${uniqueNumbers.length} unique items...`, "info");
+        const campId = await DataStore.createCampaign(name, msg, uniqueNumbers.length, State.activeFile);
+        if(!campId) return Utils.toast("Database Error", "error");
+
+        await DataStore.addToQueue(campId, uniqueNumbers);
+        await DataStore.setCampaignStatus(campId, 'running'); 
+
+        State.campBuilder.lists = []; 
+        CampBuilder.renderTags();
+        document.getElementById('camp-manual-input').value = "";
         
-        if(!nums.length) return Utils.toast("No numbers provided", "error");
+        Utils.toast("Launched! Monitor Active.", "success");
+        UI.setCampTab('monitor');
+        if(!State.engine.running) this.poll();
+    },
+
+    async poll() {
+        if(State.engine.running) return; 
+        State.engine.running = true;
+
+        const monitorName = document.getElementById('monitor-camp-name');
+        const monitorBadge = document.getElementById('monitor-badge');
+        const miniStatus = document.getElementById('engine-status-mini');
+
+        const activeCamp = await DataStore.getActiveCampaign();
         
-        Utils.toast("Creating Campaign...", "info");
-        const campId = await DataStore.createCampaign(name, msg, nums.length, State.activeFile);
-        if(!campId) return Utils.toast("DB Create Failed", "error");
-
-        Utils.toast(`Queueing ${nums.length} contacts...`, "info");
-        await DataStore.addToQueue(campId, nums);
-
-        State.activeCampaignId = campId;
-        document.getElementById('active-camp-display').innerText = `ID: ${campId.slice(0,8)}...`;
-        this.toggle(true);
-    },
-
-    toggle(forceStart = false) { 
-        if(forceStart) State.isRunning = false; 
-        State.isRunning = !State.isRunning; 
-        document.getElementById('btn-engine-toggle').innerText = State.isRunning ? "PAUSE" : "RESUME"; 
-        if(State.isRunning) this.processBatch(); 
-    },
-
-    clear() { 
-        State.activeCampaignId = null; State.isRunning = false; 
-        document.getElementById('btn-engine-toggle').innerText = "START"; 
-        document.getElementById('active-camp-display').innerText = "Idle"; 
-        Utils.toast("Engine Reset"); 
-    },
-
-    async processBatch() {
-        if(!State.isRunning) return;
-        const batch = await DataStore.getNextBatch(State.activeCampaignId, parseInt(State.settings.batch)||10);
-
-        if(!batch || !batch.length) {
-            await DataStore.updateStatus(State.activeCampaignId, 'completed');
-            Utils.toast("Campaign Finished!", "success");
-            this.clear();
-            this.refreshCampaigns();
+        if(!activeCamp) {
+            State.engine.running = false;
+            monitorName.innerText = "System Idle";
+            monitorBadge.innerText = "WAITING";
+            monitorBadge.className = "px-2 py-0.5 rounded bg-slate-200 text-[10px] font-bold text-slate-500";
+            miniStatus.innerText = "IDLE";
+            miniStatus.className = "text-[10px] font-bold text-slate-400";
+            setTimeout(() => this.poll(), 3000); 
             return;
         }
 
-        Utils.log(`<div class="mt-2 mb-1 text-[10px] font-bold text-slate-400 text-center">--- Batch (${batch.length}) ---</div>`);
+        monitorName.innerText = activeCamp.name;
+        monitorBadge.innerText = "RUNNING";
+        monitorBadge.className = "px-2 py-0.5 rounded bg-emerald-100 text-[10px] font-bold text-emerald-600 animate-pulse";
+        miniStatus.innerText = "ACTIVE";
+        miniStatus.className = "text-[10px] font-bold text-emerald-600 animate-pulse";
+        
+        const batchSize = parseInt(State.settings.batch) || 10;
+        const batch = await DataStore.getNextBatch(activeCamp.id, batchSize);
 
-        for (const item of batch) {
-            if(!State.isRunning) break;
-            Utils.log(`<div class="text-slate-500 border-l-2 border-slate-200 pl-2 text-[10px]">> ${item.number}...</div>`);
-            
-            // Dynamic Message Reading (Allows live edits)
-            const msg = document.getElementById('camp-msg').value;
+        if(!batch.length) {
+            await DataStore.setCampaignStatus(activeCamp.id, 'completed');
+            Utils.toast(`Campaign Finished!`, "success");
+            State.engine.running = false;
+            this.poll(); 
+            return;
+        }
 
+        const successIds = [];
+        const failIds = [];
+        const bar = document.getElementById('batch-bar');
+
+        Utils.log(`<div class="mt-2 text-slate-300">--- BATCH (${batch.length}) ---</div>`);
+
+        for (let i = 0; i < batch.length; i++) {
+            const item = batch[i];
             try {
-                await Api.req('send', { id: State.user, number: item.number, message: msg, file: State.activeFile });
-                await DataStore.updateQueueStatus(item.id, 'sent');
-                await DataStore.updateStats(State.activeCampaignId, 'sent');
-                
-                document.getElementById('stat-sent').innerText = (parseInt(document.getElementById('stat-sent').innerText) || 0) + 1;
-                Utils.log(`<div class="text-emerald-600 font-bold border-l-2 border-emerald-500 pl-2 text-[10px]">> SENT</div>`);
+                bar.style.width = `${((i+1)/batch.length)*100}%`;
+                await Api.req('send', { 
+                    id: State.user, 
+                    number: item.number, 
+                    message: activeCamp.message, 
+                    file: activeCamp.media_data ? { data: activeCamp.media_data, mimetype: activeCamp.media_mime, filename: activeCamp.media_name } : null 
+                });
+                successIds.push(item.id);
+                Utils.log(`<div class="text-emerald-500 text-[10px] font-bold">> ${item.number} [OK]</div>`);
             } catch(e) {
-                await DataStore.updateQueueStatus(item.id, 'failed');
-                await DataStore.updateStats(State.activeCampaignId, 'failed');
-                Utils.log(`<div class="text-red-500 font-bold border-l-2 border-red-500 pl-2 text-[10px]">> FAIL</div>`);
+                failIds.push(item.id);
+                Utils.log(`<div class="text-red-400 text-[10px] font-bold">> ${item.number} [ERR]</div>`);
             }
-
-            await new Promise(r => setTimeout(r, Math.random() * 3000 + 2000));
+            await new Promise(r => setTimeout(r, Math.random() * 500 + 500));
         }
 
-        if(State.isRunning) {
-            const cool = parseInt(State.settings.cool) || 60;
-            Utils.log(`<div class="text-amber-600 text-[10px] text-center italic my-1">Cooling: ${cool}s...</div>`);
-            setTimeout(() => this.processBatch(), cool * 1000);
-        }
+        await DataStore.batchUpdateStatus(successIds, failIds);
+        await DataStore.incrementStats(activeCamp.id, successIds.length, failIds.length);
+        
+        document.getElementById('monitor-success').innerText = (parseInt(document.getElementById('monitor-success').innerText)||0) + successIds.length;
+        document.getElementById('monitor-fail').innerText = (parseInt(document.getElementById('monitor-fail').innerText)||0) + failIds.length;
+
+        State.engine.running = false;
+        const cool = parseInt(State.settings.cool) || 60;
+        
+        let cd = cool;
+        const timer = setInterval(() => { monitorBadge.innerText = `COOLING ${cd}s`; cd--; if(cd <= 0) clearInterval(timer); }, 1000);
+        setTimeout(() => this.poll(), cool * 1000);
+    },
+
+    async toggleCamp(id, currentStatus) {
+        const newStatus = currentStatus === 'running' ? 'paused' : 'running';
+        await DataStore.setCampaignStatus(id, newStatus);
+        this.refreshCampaigns();
+        if(newStatus === 'running') this.poll(); 
     },
 
     async refreshCampaigns() {
         const tbody = document.getElementById('history-table-body');
-        tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-xs text-slate-400">Loading...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-xs text-slate-400">Loading...</td></tr>';
         const camps = await DataStore.getCampaigns();
-        State.historyCache = camps; 
         tbody.innerHTML = '';
-        if(!camps.length) { tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-xs text-slate-400">No campaigns found</td></tr>'; return; }
-        camps.forEach((c, idx) => {
+        if(!camps.length) { tbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-xs text-slate-400">No History</td></tr>'; return; }
+        
+        camps.forEach(c => {
             const row = document.createElement('tr');
-            row.className = "hover:bg-slate-50 transition-colors border-b border-slate-50";
-            row.innerHTML = `<td class="px-6 py-3 font-bold text-xs text-slate-800">${c.name}</td><td class="px-6 py-3 text-[10px] text-slate-500">${new Date(c.created_at).toLocaleDateString()}</td><td class="px-6 py-3 text-xs font-mono"><span class="text-emerald-600 font-bold">${c.sent_count}</span> <span class="text-slate-300">/</span> <span class="text-slate-500">${c.total_count}</span></td><td class="px-6 py-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${c.status==='running'?'bg-blue-100 text-blue-700':(c.status==='completed'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500')}">${c.status}</span></td><td class="px-6 py-3 text-right"><button onclick="Engine.loadFromHistory(${idx})" class="text-[10px] font-bold bg-white border border-slate-200 text-slate-600 hover:text-brand-600 hover:border-brand-200 px-3 py-1 rounded transition-colors shadow-sm">Load</button></td>`;
+            row.className = "border-b border-slate-50 hover:bg-slate-50";
+            let statusBadge = "";
+            if(c.status === 'running') statusBadge = `<span class="bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-[10px] font-bold animate-pulse">RUNNING</span>`;
+            else if(c.status === 'paused') statusBadge = `<span class="bg-amber-100 text-amber-700 px-2 py-1 rounded text-[10px] font-bold">PAUSED</span>`;
+            else statusBadge = `<span class="bg-slate-100 text-slate-500 px-2 py-1 rounded text-[10px] font-bold uppercase">${c.status}</span>`;
+
+            const percent = c.total_count > 0 ? Math.round(((c.sent_count + c.failed_count) / c.total_count) * 100) : 0;
+            row.innerHTML = `<td class="px-6 py-4"><div class="font-bold text-xs text-slate-800">${c.name}</div><div class="text-[10px] text-slate-400">${new Date(c.created_at).toLocaleDateString()}</div></td><td class="px-6 py-4"><div class="w-full bg-slate-200 h-1.5 rounded-full mb-1"><div class="h-full bg-brand-500 rounded-full" style="width: ${percent}%"></div></div><div class="text-[10px] text-slate-500 font-mono">${c.sent_count}/${c.total_count}</div></td><td class="px-6 py-4">${statusBadge}</td><td class="px-6 py-4 text-right">${c.status !== 'completed' ? `<button onclick="Engine.toggleCamp('${c.id}', '${c.status}')" class="text-[10px] font-bold border px-3 py-1.5 rounded transition-colors ${c.status==='running' ? 'border-amber-200 text-amber-600 bg-amber-50 hover:bg-amber-100' : 'border-emerald-200 text-emerald-600 bg-emerald-50 hover:bg-emerald-100'}">${c.status==='running' ? 'PAUSE' : 'RESUME'}</button>` : '<span class="text-slate-300 text-[10px]">--</span>'}</td>`;
             tbody.appendChild(row);
         });
-    },
-
-    async loadFromHistory(idx) {
-        const minimal = State.historyCache[idx];
-        if(!minimal) return;
-        Utils.toast("Loading...", "info");
-        const full = await DataStore.getCampaignFull(minimal.id);
-        
-        UI.setCampTab('launch');
-        document.getElementById('camp-name').value = `${full.name} (Rerun)`;
-        document.getElementById('camp-msg').value = full.message || "";
-        
-        if(full.media_data) {
-            State.activeFile = { data: full.media_data, mimetype: full.media_mime, filename: full.media_name };
-            document.getElementById('file-name').innerText = `${full.media_name} (Loaded)`;
-            document.getElementById('file-name').classList.add("text-emerald-600");
-        }
-    },
-
-    async checkRecovery() {
-        const active = await DataStore.getRunning();
-        if(active && confirm(`Recover interrupted campaign "${active.name}"?`)) {
-            State.activeCampaignId = active.id;
-            document.getElementById('active-camp-display').innerText = `ID: ${active.id.slice(0,8)}...`;
-            document.getElementById('camp-name').value = active.name;
-            document.getElementById('camp-msg').value = active.message;
-            if(active.media_data) {
-                State.activeFile = { data: active.media_data, mimetype: active.media_mime, filename: active.media_name };
-                document.getElementById('file-name').innerText = `${active.media_name} (Recovered)`;
-            }
-            Utils.toast("Recovered. Click RESUME.", "success");
-        }
-    }
-};
-
-// --- 5. MANAGERS (Session, Contact, DatabaseUI) ---
-const Session = {
-    switch(id) { State.user = id; this.renderBtn(); this.check(); },
-    renderBtn() { ['client-1','client-2'].forEach(id => { const btn = document.getElementById(id === 'client-1' ? 'btn-c1' : 'btn-c2'); btn.className = `py-2 text-[10px] font-bold rounded-lg border transition-all ${State.user===id ? 'border-brand-600 bg-brand-600 text-white shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`; }); },
-    async start() {
-        document.getElementById('action-area').innerHTML = `<div class="w-full py-2 bg-slate-100 text-slate-400 text-xs font-bold rounded-lg flex justify-center gap-2"><span class="loader border-slate-300 border-b-slate-500"></span> Connecting...</div>`;
-        await Api.req('start', { id: State.user }); setTimeout(() => this.check(), 2000);
-    },
-    async stop() { if(confirm("Stop Session?")) await Api.req('logout', { id: State.user }); this.check(); },
-    async check() {
-        const res = await Api.req(`status/${State.user}`);
-        const area = document.getElementById('action-area'), dot = document.getElementById('conn-dot');
-        if(res) {
-            State.status = res.status; State.qr = res.qr;
-            if(State.status === 'READY') { dot.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]"; area.innerHTML = `<button onclick="Session.stop()" class="w-full py-2 bg-red-50 text-red-600 text-xs font-bold rounded-lg hover:bg-red-100">Disconnect</button>`; document.getElementById('modal-qr').classList.add('hidden'); } 
-            else if (State.status === 'QR_READY') { dot.className = "w-2 h-2 rounded-full bg-blue-500 animate-pulse"; area.innerHTML = `<button onclick="document.getElementById('modal-qr').classList.remove('hidden')" class="w-full py-2 bg-brand-600 text-white text-xs font-bold rounded-lg hover:bg-brand-700">Scan QR</button>`; if(State.qr && window.QRious) new QRious({ element: document.getElementById('qr-canvas'), value: State.qr, size: 200 }); } 
-            else { dot.className = "w-2 h-2 rounded-full bg-slate-300"; area.innerHTML = `<button onclick="Session.start()" class="w-full py-2 bg-slate-800 text-white text-xs font-bold rounded-lg hover:bg-slate-900">Initialize</button>`; }
-        }
     }
 };
 
@@ -309,28 +347,30 @@ const ContactManager = {
 
 const Database = {
     async render() {
-        const grid = document.getElementById('contact-grid'), sel = document.getElementById('camp-list-selector');
-        grid.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">Loading Cloud...</div>'; 
-        sel.innerHTML = '<option value="">Load Cloud List</option>';
+        const sel = document.getElementById('camp-source-list');
+        const grid = document.getElementById('contact-grid');
         const lists = await DataStore.getLists();
-        grid.innerHTML = '';
-        lists.forEach(l => {
-            const div = document.createElement('div');
-            div.className = "flex justify-between items-center p-3 bg-slate-50 border border-slate-200 rounded-lg hover:border-slate-300 transition-colors";
-            div.innerHTML = `<div><p class="text-xs font-bold text-slate-700">${l.name}</p><p class="text-[10px] text-slate-400">${l.count} items</p></div><div class="flex gap-1"><button onclick="CoreUtils.exportCSV('${l.name}', DataStore.getListContent('${l.id}'))" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-green-600"><i data-lucide="download" class="w-3 h-3"></i></button><button onclick="ContactManager.loadToSelect('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-brand-600"><i data-lucide="check-square" class="w-3 h-3"></i></button><button onclick="Database.openEdit('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-blue-600"><i data-lucide="pencil" class="w-3 h-3"></i></button><button onclick="Database.delete('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-red-500"><i data-lucide="trash" class="w-3 h-3"></i></button></div>`;
-            grid.appendChild(div);
-            const opt = document.createElement('option'); opt.value = l.id; opt.innerText = `${l.name} (${l.count})`; sel.appendChild(opt);
-        });
-        document.getElementById('stat-stored').innerText = lists.length;
+        
+        if(sel) {
+            sel.innerHTML = '<option value="">Select a Cloud List...</option>';
+            lists.forEach(l => { const opt = document.createElement('option'); opt.value = l.id; opt.innerText = `${l.name} (${l.count})`; sel.appendChild(opt); });
+        }
+        
+        if(grid) {
+            grid.innerHTML = '';
+            lists.forEach(l => {
+                const div = document.createElement('div');
+                div.className = "flex justify-between items-center p-3 bg-slate-50 border border-slate-200 rounded-lg hover:border-slate-300 transition-colors";
+                div.innerHTML = `<div><p class="text-xs font-bold text-slate-700">${l.name}</p><p class="text-[10px] text-slate-400">${l.count} items</p></div><div class="flex gap-1"><button onclick="CoreUtils.exportCSV('${l.name}', DataStore.getListContent('${l.id}'))" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-green-600"><i data-lucide="download" class="w-3 h-3"></i></button><button onclick="ContactManager.loadToSelect('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-brand-600"><i data-lucide="check-square" class="w-3 h-3"></i></button><button onclick="Database.openEdit('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-blue-600"><i data-lucide="pencil" class="w-3 h-3"></i></button><button onclick="Database.delete('${l.id}')" class="p-1.5 bg-white border border-slate-200 rounded text-slate-400 hover:text-red-500"><i data-lucide="trash" class="w-3 h-3"></i></button></div>`;
+                grid.appendChild(div);
+            });
+        }
+        
+        const statStored = document.getElementById('stat-stored');
+        if(statStored) statStored.innerText = lists.length;
         lucide.createIcons();
     },
     async delete(id) { if(confirm("Delete Cloud List?")) { await DataStore.deleteList(id); this.render(); } },
-    async loadListToCamp(id) {
-        if(!id) return;
-        const { contacts } = await DataStore.getListContent(id);
-        document.getElementById('camp-input').value = contacts.map(c => c.number).join('\n');
-        Utils.toast("Numbers Loaded", "success");
-    },
     createNewEmpty() { this.openEdit(null); },
     async openEdit(id) {
         const modal = document.getElementById('modal-edit'), area = document.getElementById('edit-area'); document.getElementById('edit-key-hidden').value = id || "NEW";
@@ -352,24 +392,46 @@ const Database = {
 
 const UI = {
     toggleSidebar() { document.getElementById('sidebar').classList.toggle('-translate-x-full'); document.getElementById('mobile-overlay').classList.toggle('hidden'); },
+    setCampTab(tab) {
+        ['launch', 'monitor', 'history'].forEach(t => {
+            const p = document.getElementById(`panel-camp-${t}`);
+            const b = document.getElementById(`tab-camp-${t}`);
+            if(t === tab) {
+                p.classList.remove('hidden');
+                b.classList.add('bg-white', 'shadow-sm', 'text-slate-800');
+                b.classList.remove('text-slate-500');
+                if(tab === 'history') Engine.refreshCampaigns();
+            } else {
+                p.classList.add('hidden');
+                b.classList.remove('bg-white', 'shadow-sm', 'text-slate-800');
+                b.classList.add('text-slate-500');
+            }
+        });
+    },
     setContactTab(tab) {
         const list = document.getElementById('cont-panel-list'), tools = document.getElementById('cont-panel-tools');
         const btnList = document.getElementById('tab-list'), btnTools = document.getElementById('tab-tools');
         if(tab === 'list') { list.classList.remove('hidden'); tools.classList.add('hidden'); btnList.classList.add('bg-white','shadow-sm','text-slate-800'); btnTools.classList.remove('bg-white','shadow-sm','text-slate-800'); } 
         else { list.classList.add('hidden'); tools.classList.remove('hidden'); tools.classList.add('flex'); btnTools.classList.add('bg-white','shadow-sm','text-slate-800'); btnList.classList.remove('bg-white','shadow-sm','text-slate-800'); }
+    }
+};
+
+const Session = {
+    switch(id) { State.user = id; this.renderBtn(); this.check(); },
+    renderBtn() { ['client-1','client-2'].forEach(id => { const btn = document.getElementById(id === 'client-1' ? 'btn-c1' : 'btn-c2'); btn.className = `py-2 text-[10px] font-bold rounded-lg border transition-all ${State.user===id ? 'border-brand-600 bg-brand-600 text-white shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`; }); },
+    async start() {
+        document.getElementById('action-area').innerHTML = `<div class="w-full py-2 bg-slate-100 text-slate-400 text-xs font-bold rounded-lg flex justify-center gap-2"><span class="loader border-slate-300 border-b-slate-500"></span> Connecting...</div>`;
+        await Api.req('start', { id: State.user }); setTimeout(() => this.check(), 2000);
     },
-    setCampTab(tab) {
-        const launch = document.getElementById('panel-camp-launch'), history = document.getElementById('panel-camp-history');
-        const btnLaunch = document.getElementById('tab-camp-launch'), btnHistory = document.getElementById('tab-camp-history');
-        if(tab === 'launch') { 
-            launch.classList.remove('hidden'); history.classList.add('hidden'); 
-            btnLaunch.classList.add('bg-white','shadow-sm','text-slate-800'); btnLaunch.classList.remove('text-slate-500');
-            btnHistory.classList.remove('bg-white','shadow-sm','text-slate-800'); btnHistory.classList.add('text-slate-500');
-        } else { 
-            launch.classList.add('hidden'); history.classList.remove('hidden'); 
-            btnHistory.classList.add('bg-white','shadow-sm','text-slate-800'); btnHistory.classList.remove('text-slate-500');
-            btnLaunch.classList.remove('bg-white','shadow-sm','text-slate-800'); btnLaunch.classList.add('text-slate-500');
-            Engine.refreshCampaigns();
+    async stop() { if(confirm("Stop Session?")) await Api.req('logout', { id: State.user }); this.check(); },
+    async check() {
+        const res = await Api.req(`status/${State.user}`);
+        const area = document.getElementById('action-area'), dot = document.getElementById('conn-dot');
+        if(res) {
+            State.status = res.status; State.qr = res.qr;
+            if(State.status === 'READY') { dot.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]"; area.innerHTML = `<button onclick="Session.stop()" class="w-full py-2 bg-red-50 text-red-600 text-xs font-bold rounded-lg hover:bg-red-100">Disconnect</button>`; document.getElementById('modal-qr').classList.add('hidden'); } 
+            else if (State.status === 'QR_READY') { dot.className = "w-2 h-2 rounded-full bg-blue-500 animate-pulse"; area.innerHTML = `<button onclick="document.getElementById('modal-qr').classList.remove('hidden')" class="w-full py-2 bg-brand-600 text-white text-xs font-bold rounded-lg hover:bg-brand-700">Scan QR</button>`; if(State.qr && window.QRious) new QRious({ element: document.getElementById('qr-canvas'), value: State.qr, size: 200 }); } 
+            else { dot.className = "w-2 h-2 rounded-full bg-slate-300"; area.innerHTML = `<button onclick="Session.start()" class="w-full py-2 bg-slate-800 text-white text-xs font-bold rounded-lg hover:bg-slate-900">Initialize</button>`; }
         }
     }
 };
