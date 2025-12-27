@@ -6,11 +6,11 @@
 
 // --- 1. GLOBAL STATE ---
 const State = { 
-    user: 'client-1', 
+    user: 'client-1', // Default session
     status: 'OFFLINE', 
     qr: null, 
     activeFile: null, 
-    settings: { batch: 10, cool: 60 }, // These settings are now illustrative or used for DB config
+    settings: { batch: 10, cool: 60 }, 
     allContacts: [], 
     selection: new Set(), 
     tempMemory: new Map(), 
@@ -74,14 +74,14 @@ const DataStore = {
         let mData = null, mMime = null, mName = null;
         if(mediaFile) { mData = mediaFile.data; mMime = mediaFile.mimetype; mName = mediaFile.filename; }
         
-        // 🔥 CRITICAL: Saving session_id (State.user) so Edge Function knows which phone to use
+        // 🔥 CRITICAL FIX: Saving session_id (State.user) so Edge Function knows which phone to use
         const { data, error } = await this.q('campaigns').insert([{ 
             name, 
             message: msg, 
             total_count: total, 
             sent_count: 0, 
-            status: 'running', // Auto-start
-            session_id: State.user, 
+            status: 'running', // Auto-start the server engine
+            session_id: State.user, // "client-1" or "client-2"
             media_data: mData, 
             media_mime: mMime, 
             media_name: mName 
@@ -102,9 +102,11 @@ const DataStore = {
     
     // NEW: Monitor Active Campaign
     async getCampaignStats(id) {
-        const { data } = await this.q('campaigns').select('sent_count, total_count, status').eq('id', id).single();
+        const { data } = await this.q('campaigns').select('sent_count, total_count, status, session_id').eq('id', id).single();
         return data;
-    }
+    },
+    
+    async getRunning() { const { data } = await this.q('campaigns').select('*').eq('status', 'running').order('created_at', { ascending: false }).limit(1).single(); return data; }
 };
 
 // --- 4. ENGINE CORE (Now acting as Controller) ---
@@ -144,9 +146,10 @@ const Engine = {
 
         State.activeCampaignId = campId;
         
-        // Start Monitoring immediately
+        // Start Monitoring immediately (The Edge Function takes over)
         this.monitor(campId);
         Utils.toast("Launched! Cloud Engine took over.", "success");
+        Utils.log(`<div class="text-emerald-600 font-bold border-l-2 border-emerald-500 pl-2 text-[10px]">Cloud Engine Started</div>`);
     },
 
     // 🚀 NEW: Polling System (Instead of Browser Loop)
@@ -158,6 +161,7 @@ const Engine = {
         document.getElementById('btn-engine-toggle').classList.replace('bg-emerald-100', 'bg-amber-100');
         document.getElementById('btn-engine-toggle').classList.replace('text-emerald-700', 'text-amber-700');
 
+        // Poll every 4 seconds to see what the Edge Function is doing
         this.monitorInterval = setInterval(async () => {
             if(!State.activeCampaignId) return;
 
@@ -175,13 +179,20 @@ const Engine = {
                 // Update Status Text
                 document.getElementById('active-camp-display').innerText = `ID: ${campId.slice(0,8)} | ${stats.status.toUpperCase()}`;
 
+                // Auto-Switch Session Context if viewing
+                if(stats.session_id !== State.user) {
+                   // Optional: visual indicator that this campaign belongs to another user
+                   document.getElementById('active-camp-display').innerText += ` (${stats.session_id})`;
+                }
+
                 // Handle Completion
-                if(stats.status === 'completed' || stats.sent_count >= stats.total_count) {
+                if(stats.status === 'completed' || (stats.sent_count >= stats.total_count && stats.total_count > 0)) {
                     this.clear();
                     Utils.toast("Campaign Completed", "success");
+                    Utils.log(`<div class="text-emerald-600 font-bold border-l-2 border-emerald-500 pl-2 text-[10px]">Campaign Completed</div>`);
                 }
             }
-        }, 4000); // Check every 4 seconds
+        }, 4000); 
     },
 
     async toggle() { 
@@ -240,8 +251,7 @@ const Engine = {
     },
 
     async checkRecovery() {
-        // Automatically check if we have a running campaign on page load
-        const active = await DataStore.getRunning(); // You need to implement getRunning in DataStore to fetch status='running'
+        const active = await DataStore.getRunning(); 
         if(active) {
              State.activeCampaignId = active.id;
              this.monitor(active.id);
@@ -250,7 +260,7 @@ const Engine = {
     }
 };
 
-// ... (Rest of Session, ContactManager, Database, UI, HTML remains same)
+// ... (Rest of Session, ContactManager, Database, UI remains same)
 const Session = {
     switch(id) { State.user = id; this.renderBtn(); this.check(); },
     renderBtn() { ['client-1','client-2'].forEach(id => { const btn = document.getElementById(id === 'client-1' ? 'btn-c1' : 'btn-c2'); btn.className = `py-2 text-[10px] font-bold rounded-lg border transition-all ${State.user===id ? 'border-brand-600 bg-brand-600 text-white shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`; }); },
