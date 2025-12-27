@@ -115,11 +115,10 @@
                         <div class="h-14 border-b border-slate-100 flex items-center justify-between px-5 bg-slate-50/50">
                             <div class="flex flex-col">
                                 <span class="text-xs font-bold text-slate-500 uppercase">Cloud Monitor</span>
-                                <span id="active-camp-display" class="text-[10px] font-bold text-brand-600">Idle</span>
+                                <span id="active-camp-display" class="text-[10px] font-bold text-slate-400">System Idle (Waiting for Cloud)</span>
                             </div>
                             <div class="flex gap-2">
-                                <button onclick="Engine.toggle()" id="btn-engine-toggle" class="text-[10px] font-bold px-4 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200">START</button>
-                                <button onclick="Engine.clear()" class="text-[10px] font-bold px-4 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50">CLEAR</button>
+                                 <div class="animate-pulse w-2 h-2 bg-emerald-500 rounded-full"></div>
                             </div>
                         </div>
                         <div id="console-logs" class="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs bg-slate-50"><div class="text-center text-slate-400 mt-20 italic">Ready to connect to Supabase Edge.</div></div>
