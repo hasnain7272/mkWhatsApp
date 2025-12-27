@@ -13,15 +13,10 @@ const cors = require('cors');
 const { MongoClient } = require('mongodb');
 const path = require('path');
 const NodeCache = require('node-cache'); 
-// 🆕 ADDED: Supabase Client for DB updates
-const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 3001; 
 const MONGO_URL = process.env.MONGO_URL; 
-
-// 🆕 ADDED: Initialize Supabase (Required for batch status updates)
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 app.use(cors());
 app.use(express.json({ limit: '60mb' }));
@@ -84,9 +79,12 @@ const initAuth = async (collection) => {
 
 // --- 💾 2. PERSISTENT STORE (Saves Contacts to DB) ---
 const makePersistentStore = async (id, mongoClient) => {
+    // We use a separate collection for contacts to keep things organized
     const contactsCol = mongoClient.db("whatsapp_bot").collection(`contacts_${id}`);
+    
     let state = { contacts: {}, chats: {} };
 
+    // A. Load contacts from DB at startup
     console.log(`[${id}] 📥 Loading contacts from DB...`);
     try {
         const docs = await contactsCol.find({}).toArray();
@@ -98,12 +96,13 @@ const makePersistentStore = async (id, mongoClient) => {
         }
     } catch (e) { console.error(`[${id}] DB Load Error:`, e); }
 
+    // Helper to bulk save contacts
     const saveToDb = async (contacts) => {
         if (!contacts.length) return;
         const ops = contacts.map(c => ({
             updateOne: {
                 filter: { _id: c.id },
-                update: { $set: Object.assign({ _id: c.id }, c) }, 
+                update: { $set: Object.assign({ _id: c.id }, c) }, // Ensure _id is set
                 upsert: true
             }
         }));
@@ -114,15 +113,22 @@ const makePersistentStore = async (id, mongoClient) => {
         get contacts() { return state.contacts; },
         get chats() { return state.chats; },
         bind: (ev) => {
+            // B. Listen for the massive history sync (First Scan)
             ev.on('messaging-history.set', async ({ contacts }) => {
                 console.log(`[${id}] 🔄 History Sync: ${contacts.length} contacts. Saving...`);
+                // Update RAM
                 contacts.forEach(c => state.contacts[c.id] = Object.assign(state.contacts[c.id] || {}, c));
+                // Update DB
                 await saveToDb(contacts);
             });
+
+            // C. Listen for new contacts / updates
             ev.on('contacts.upsert', async (contacts) => {
                 contacts.forEach(c => state.contacts[c.id] = Object.assign(state.contacts[c.id] || {}, c));
                 await saveToDb(contacts);
             });
+            
+            // D. Listen for contact name updates
             ev.on('contacts.update', async (updates) => {
                 const updatedContacts = [];
                 updates.forEach(u => {
@@ -150,6 +156,8 @@ async function createSession(id) {
         const { state, saveCreds } = await initAuth(authCol);
         
         const { version } = await fetchLatestBaileysVersion();
+        
+        // 🔥 Use Persistent Store instead of Memory Store
         const store = await makePersistentStore(id, mongo);
 
         console.log(`[${id}] Starting Socket...`);
@@ -165,6 +173,8 @@ async function createSession(id) {
             },
             msgRetryCounterCache, 
             generateHighQualityLinkPreview: true,
+            // Optimization: Don't wait for full history if we already have data, 
+            // but for first run with this code, we want it.
             syncFullHistory: true 
         });
 
@@ -213,15 +223,22 @@ app.get('/api/status/:id', (req, res) => {
     res.json({ status: s ? s.status : 'OFFLINE', qr: s ? s.qr : null }); 
 });
 
+// 🔥 Logout Route (Use this to force a re-scan)
 app.post('/api/logout', async (req, res) => { 
     const { id } = req.body;
     if (sessions[id]) {
         try { await sessions[id].sock.logout(); } catch(e){}
         delete sessions[id];
     }
+    // Note: We do NOT delete the contacts collection here, so data persists.
+    // If you WANT to wipe contacts, uncomment the next line:
+    // await new MongoClient(MONGO_URL).connect().then(m => m.db("whatsapp_bot").collection(`contacts_${id}`).drop());
+    
+    // We DO wipe the session keys so you can scan again
     const mongo = new MongoClient(MONGO_URL);
     await mongo.connect();
     await mongo.db("whatsapp_bot").collection(`session_${id}`).drop();
+    
     res.json({ success: true }); 
 });
 
@@ -244,59 +261,6 @@ app.post('/api/send', async (req, res) => {
         await sessions[id].sock.sendMessage(jid, payload);
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// 🔥 NEW: Batch Send Endpoint (Designed for Edge Functions)
-app.post('/api/batch-send', async (req, res) => {
-    const batches = req.body; // Expects: { "client-1": [{id, number, msg}, ...], "client-2": [...] }
-
-    // 1. Respond Immediately (Prevent Edge Function Timeout)
-    res.json({ success: true, message: 'Processing in background' });
-
-    console.log(`[Batch] 📨 Received batch payload`);
-
-    // 2. Process in Background
-    Object.keys(batches).forEach(async (sessionId) => {
-        const session = sessions[sessionId];
-        const queueItems = batches[sessionId];
-
-        if (!session || session.status !== 'READY') {
-            console.log(`[Batch] ⚠️ Session ${sessionId} offline. Skipping ${queueItems.length} msgs.`);
-            // Optional: You could update DB to 'failed' here if you want stricter tracking
-            return;
-        }
-
-        console.log(`[Batch] 🚀 Processing ${queueItems.length} msgs for ${sessionId}`);
-
-        for (const item of queueItems) {
-            // A. Anti-Ban Delay (Random 5s - 15s)
-            const delay = Math.floor(Math.random() * 10000) + 5000;
-            await new Promise(r => setTimeout(r, delay));
-
-            const jid = item.number + "@s.whatsapp.net";
-            try {
-                // B. Send Message
-                await session.sock.sendMessage(jid, { text: item.msg });
-                console.log(`[Batch] ✅ Sent to ${item.number}`);
-
-                // C. Update Supabase Queue Status
-                await supabase
-                    .from('campaign_queue')
-                    .update({ status: 'sent', sent_at: new Date() })
-                    .eq('id', item.id);
-
-            } catch (err) {
-                console.error(`[Batch] ❌ Failed ${item.number}:`, err.message);
-                
-                // Mark as Failed
-                await supabase
-                    .from('campaign_queue')
-                    .update({ status: 'failed' })
-                    .eq('id', item.id);
-            }
-        }
-        console.log(`[Batch] 🏁 Finished batch for ${sessionId}`);
-    });
 });
 
 app.get('/api/contacts/:id', (req, res) => {
@@ -329,12 +293,15 @@ app.get('/api/get-members', async (req, res) => {
 });
 
 app.get('/api/init', (req, res) => {
+    // Security Check: Ensure keys exist on server before sending
     if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
         return res.status(500).json({ error: 'Server Environment Not Configured' });
     }
+
     res.json({
         SUPABASE_URL: process.env.SUPABASE_URL,
         SUPABASE_KEY: process.env.SUPABASE_KEY,
+        // Optional: Send the API Base URL dynamically too
         API_BASE: process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000'
     });
 });
