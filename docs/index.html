@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Nexus OS | v3.2 Pro</title>
+    <title>Nexus OS | v4.0 Serverless</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
@@ -29,13 +29,13 @@
 
     <aside id="sidebar" class="fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 -translate-x-full md:translate-x-0 shadow-2xl md:shadow-none">
         <div class="h-16 flex items-center px-6 border-b border-slate-100 shrink-0">
-            <div class="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-brand-500/30"><i data-lucide="layers" class="w-5 h-5"></i></div>
-            <div><h1 class="font-bold text-lg tracking-tight">Nexus OS</h1><span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">v3.2 Persistent</span></div>
+            <div class="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white mr-3 shadow-lg shadow-brand-500/30"><i data-lucide="cloud-lightning" class="w-5 h-5"></i></div>
+            <div><h1 class="font-bold text-lg tracking-tight">Nexus OS</h1><span class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">v4.0 Cloud Engine</span></div>
             <button onclick="UI.toggleSidebar()" class="ml-auto md:hidden text-slate-400 p-2"><i data-lucide="x" class="w-5 h-5"></i></button>
         </div>
         <div class="flex-1 p-4 overflow-y-auto space-y-6">
             <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                <div class="flex items-center justify-between mb-3"><span class="text-[10px] uppercase font-bold text-slate-400">Session</span><span id="conn-dot" class="w-2 h-2 rounded-full bg-slate-300"></span></div>
+                <div class="flex items-center justify-between mb-3"><span class="text-[10px] uppercase font-bold text-slate-400">Session Context</span><span id="conn-dot" class="w-2 h-2 rounded-full bg-slate-300"></span></div>
                 <div class="grid grid-cols-2 gap-2 mb-3">
                     <button onclick="Session.switch('client-1')" id="btn-c1" class="py-2 text-[10px] font-bold rounded-lg border">NODE 1</button>
                     <button onclick="Session.switch('client-2')" id="btn-c2" class="py-2 text-[10px] font-bold rounded-lg border">NODE 2</button>
@@ -47,11 +47,11 @@
                 <button onclick="Router.go('dashboard')" id="nav-dashboard" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="layout-grid" class="w-4 h-4"></i> Dashboard</button>
                 <button onclick="Router.go('campaigns')" id="nav-campaigns" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="megaphone" class="w-4 h-4"></i> Campaigns</button>
                 <button onclick="Router.go('contacts')" id="nav-contacts" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="book-user" class="w-4 h-4"></i> Contacts</button>
-                <button onclick="Router.go('settings')" id="nav-settings" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="settings" class="w-4 h-4"></i> Config</button>
+                <button onclick="Router.go('settings')" id="nav-settings" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all"><i data-lucide="server" class="w-4 h-4"></i> System</button>
             </nav>
         </div>
         <div class="p-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
-            <div class="flex justify-between items-center mb-2"><span class="text-[10px] font-bold text-slate-500 uppercase">Engine Status</span><span id="queue-mini" class="text-[10px] font-bold text-brand-600">IDLE</span></div>
+            <div class="flex justify-between items-center mb-2"><span class="text-[10px] font-bold text-slate-500 uppercase">Cloud Status</span><span id="queue-mini" class="text-[10px] font-bold text-brand-600">WAITING</span></div>
             <div class="w-full bg-slate-200 h-1 rounded-full"><div id="global-progress" class="h-full bg-brand-600 w-0 transition-all"></div></div>
         </div>
     </aside>
@@ -59,7 +59,7 @@
     <main class="flex-1 relative flex flex-col h-full overflow-hidden w-full bg-white md:bg-slate-50/30 md:ml-72 transition-all">
         <header class="h-16 px-4 md:px-8 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-30">
             <div class="flex items-center gap-3"><button onclick="UI.toggleSidebar()" class="md:hidden p-2 -ml-2 text-slate-600"><i data-lucide="menu" class="w-5 h-5"></i></button><h2 id="page-title" class="text-lg md:text-xl font-bold text-slate-800">Dashboard</h2></div>
-            <div class="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600 shadow-sm flex items-center gap-2"><span id="status-light" class="w-2 h-2 rounded-full bg-slate-300"></span><span>Queue: <span id="queue-count" class="text-brand-600">0</span></span></div>
+            <div class="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600 shadow-sm flex items-center gap-2"><span id="status-light" class="w-2 h-2 rounded-full bg-slate-300"></span><span>Pending: <span id="queue-count" class="text-brand-600">0</span></span></div>
         </header>
 
         <div class="flex-1 overflow-y-auto p-4 md:p-6 relative no-scrollbar">
@@ -83,9 +83,10 @@
 
             <div id="view-dashboard" class="max-w-6xl mx-auto space-y-6 fade-in">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="database" class="w-4 h-4 text-brand-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Cloud Lists</span></div><p id="stat-stored" class="text-3xl font-bold text-slate-800 tracking-tight">0</p></div>
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="send" class="w-4 h-4 text-emerald-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Session Sent</span></div><p id="stat-sent" class="text-3xl font-bold text-slate-800 tracking-tight">0</p></div>
-                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="shield" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">System</span></div><p class="text-3xl font-bold text-slate-800 tracking-tight">V3.2 DB</p></div>
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm"><div class="flex items-center gap-3 mb-2"><i data-lucide="cpu" class="w-4 h-4 text-amber-500"></i><span class="text-xs font-bold text-slate-400 uppercase">Architecture</span></div><p class="text-3xl font-bold text-slate-800 tracking-tight">Serverless</p></div>
                 </div>
             </div>
 
@@ -106,22 +107,21 @@
                                 <input id="camp-msg" type="text" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs outline-none focus:border-brand-500" placeholder="Type message...">
                                 <div onclick="document.getElementById('camp-file').click()" class="border border-dashed border-slate-300 rounded-lg p-3 flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50"><i data-lucide="paperclip" class="w-4 h-4 text-slate-400"></i><span id="file-name" class="text-xs font-bold text-slate-500 truncate">Attach File</span><input type="file" id="camp-file" class="hidden" onchange="Engine.handleFile(this)"></div>
                             </div>
-                            <button onclick="Engine.createAndQueue()" class="mt-4 w-full py-3 bg-slate-800 text-white rounded-xl font-bold shadow-lg hover:bg-slate-900 transition-all flex justify-center gap-2"><i data-lucide="rocket" class="w-4 h-4"></i> Create & Launch</button>
+                            <button onclick="Engine.createAndQueue()" class="mt-4 w-full py-3 bg-slate-800 text-white rounded-xl font-bold shadow-lg hover:bg-slate-900 transition-all flex justify-center gap-2"><i data-lucide="cloud-upload" class="w-4 h-4"></i> Upload to Engine</button>
                         </div>
                     </div>
                     
                     <div class="flex-1 bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden shadow-sm h-[400px] md:h-auto">
                         <div class="h-14 border-b border-slate-100 flex items-center justify-between px-5 bg-slate-50/50">
                             <div class="flex flex-col">
-                                <span class="text-xs font-bold text-slate-500 uppercase">Dispatcher</span>
-                                <span id="active-camp-display" class="text-[10px] font-bold text-brand-600">No Active Database Campaign</span>
+                                <span class="text-xs font-bold text-slate-500 uppercase">Cloud Monitor</span>
+                                <span id="active-camp-display" class="text-[10px] font-bold text-slate-400">System Idle (Waiting for Cloud)</span>
                             </div>
                             <div class="flex gap-2">
-                                <button onclick="Engine.toggle()" id="btn-engine-toggle" class="text-[10px] font-bold px-4 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200">START</button>
-                                <button onclick="Engine.clear()" class="text-[10px] font-bold px-4 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50">RESET</button>
+                                 <div class="animate-pulse w-2 h-2 bg-emerald-500 rounded-full"></div>
                             </div>
                         </div>
-                        <div id="console-logs" class="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs bg-slate-50"><div class="text-center text-slate-400 mt-20 italic">System Ready.</div></div>
+                        <div id="console-logs" class="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs bg-slate-50"><div class="text-center text-slate-400 mt-20 italic">Ready to connect to Supabase Edge.</div></div>
                     </div>
                 </div>
 
@@ -163,11 +163,13 @@
             </div>
 
             <div id="view-settings" class="hidden max-w-xl mx-auto fade-in">
-                <div class="bg-white p-8 rounded-xl border border-slate-200 shadow-sm">
-                    <h3 class="font-bold text-lg text-slate-800 mb-6">Configuration</h3>
-                    <div class="space-y-6">
-                        <div><div class="flex justify-between mb-2"><label class="text-xs font-bold text-slate-600">Batch Size (Anti-Ban)</label><span id="val-batch" class="text-xs font-bold text-brand-600">10</span></div><input type="range" min="1" max="50" value="10" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" oninput="Settings.save('batch', this.value)"></div>
-                        <div><div class="flex justify-between mb-2"><label class="text-xs font-bold text-slate-600">Cool-down (s)</label><span id="val-cool" class="text-xs font-bold text-brand-600">60</span></div><input type="range" min="10" max="300" value="60" class="w-full accent-brand-600 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" oninput="Settings.save('cool', this.value)"></div>
+                <div class="bg-white p-8 rounded-xl border border-slate-200 shadow-sm text-center">
+                    <div class="w-16 h-16 bg-brand-50 text-brand-600 rounded-full flex items-center justify-center mx-auto mb-4"><i data-lucide="cloud" class="w-8 h-8"></i></div>
+                    <h3 class="font-bold text-lg text-slate-800 mb-2">Cloud Engine Managed</h3>
+                    <p class="text-slate-500 text-sm mb-6">Configuration (Batch Size, Cool-down) is now managed by the Supabase Edge Function to ensure reliability and anti-ban compliance.</p>
+                    <div class="inline-flex gap-4 text-xs font-mono text-slate-400 bg-slate-50 px-4 py-2 rounded-lg border border-slate-200">
+                        <span>BATCH: 10</span>
+                        <span>COOL: Random(3-6s)</span>
                     </div>
                 </div>
             </div>
@@ -189,7 +191,7 @@
                 const { createClient } = supabase;
                 window.db = createClient(window.CONFIG.SUPABASE_URL, window.CONFIG.SUPABASE_KEY);
                 
-                // 4. Start App Logic (The exact calls your original code had)
+                // 4. Start App Logic
                 lucide.createIcons();
                 Session.renderBtn();
                 Database.render();
@@ -199,7 +201,7 @@
                 
                 // 5. Setup Router Defaults
                 Router.go('dashboard');
-                console.log("Nexus OS: Full Feature Mode Loaded");
+                console.log("Nexus OS: Cloud Controller Loaded");
             } catch(e) {
                 console.error(e);
                 document.body.innerHTML = `<div class="p-10 text-center font-bold text-red-600">Fatal: Config Load Failed. Check Backend.</div>`;

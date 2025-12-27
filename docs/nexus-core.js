@@ -1,17 +1,17 @@
 /**
- * NEXUS CORE v3.2 | "THE MONOLITH"
- * Full Feature Parity: Contacts, Lists, Campaigns, Queue, Session.
- * Dynamic Configuration: 0 Hardcoded Values.
+ * NEXUS CORE v4.0 | "THE CONTROLLER"
+ * Architecture: Serverless Event-Driven
+ * Browser Role: UI & Remote Control only.
  */
 
 // --- 1. GLOBAL STATE ---
 const State = { 
-    user: 'client-1', 
+    user: 'client-1', // Default session
     status: 'OFFLINE', 
     qr: null, 
     activeFile: null, 
-    isRunning: false, 
-    settings: { batch: 10, cool: 60 }, 
+    // Settings are now managed by Cloud Engine, UI is just for show
+    settings: { batch: 10, cool: 'Random' }, 
     allContacts: [], 
     selection: new Set(), 
     tempMemory: new Map(), 
@@ -49,8 +49,6 @@ const Router = {
     } 
 };
 
-const Settings = { save(k,v) { State.settings[k]=v; document.getElementById(`val-${k}`).innerText = v; } };
-
 // --- 3. API & DATA LAYER ---
 const Api = {
     async req(endpoint, body) {
@@ -62,40 +60,50 @@ const Api = {
 };
 
 const DataStore = {
-    // Helper for Supabase Calls
     q(table) { return window.db.from(table); },
 
-    // LISTS (Contact Manager)
+    // LISTS
     async getLists() { const { data } = await this.q('lists').select('id, name, contacts').order('created_at', { ascending: false }); return data ? data.map(i => ({ id: i.id, name: i.name, count: i.contacts ? i.contacts.length : 0 })) : []; },
     async getListContent(id) { const { data } = await this.q('lists').select('name, contacts').eq('id', id).single(); return data || { name: '', contacts: [] }; },
     async saveList(name, contacts) { const { data: existing } = await this.q('lists').select('id').eq('name', name).maybeSingle(); if (existing) await this.q('lists').update({ contacts }).eq('id', existing.id); else await this.q('lists').insert([{ name, contacts }]); },
     async deleteList(id) { await this.q('lists').delete().eq('id', id); },
 
-    // CAMPAIGNS & QUEUE
+    // CAMPAIGNS (Updated for Server-Side)
     async createCampaign(name, msg, total, mediaFile) {
         let mData = null, mMime = null, mName = null;
         if(mediaFile) { mData = mediaFile.data; mMime = mediaFile.mimetype; mName = mediaFile.filename; }
-        const { data, error } = await this.q('campaigns').insert([{ name, message: msg, total_count: total, sent_count: 0, status: 'running', media_data: mData, media_mime: mMime, media_name: mName }]).select().single();
+        
+        // 🔥 Saving session_id (State.user) so Edge Function knows which phone to use
+        const { data, error } = await this.q('campaigns').insert([{ 
+            name, 
+            message: msg, 
+            total_count: total, 
+            sent_count: 0, 
+            status: 'running', // Auto-start the server engine
+            session_id: State.user, // "client-1" or "client-2"
+            media_data: mData, 
+            media_mime: mMime, 
+            media_name: mName 
+        }]).select().single();
         return error ? null : data.id;
     },
     async addToQueue(campId, numbers) {
         const rows = numbers.map(n => ({ campaign_id: campId, number: n, status: 'pending' }));
+        // Bulk insert in chunks of 500
         for (let i = 0; i < rows.length; i += 500) await this.q('campaign_queue').insert(rows.slice(i, i + 500));
     },
-    async getNextBatch(campId, size) { const { data } = await this.q('campaign_queue').select('id, number').eq('campaign_id', campId).eq('status', 'pending').limit(size); return data || []; },
-    async updateQueueStatus(itemId, status) { await this.q('campaign_queue').update({ status }).eq('id', itemId); },
-    async updateStats(id, type) { 
-        // Optimized: Increment logic in memory for UI, DB for persistence
-        const { data } = await this.q('campaigns').select(`${type}_count`).eq('id', id).single(); 
-        if(data) await this.q('campaigns').update({ [`${type}_count`]: data[`${type}_count`] + 1 }).eq('id', id); 
-    },
-    async updateStatus(id, status) { await this.q('campaigns').update({ status }).eq('id', id); },
-    async getCampaigns() { const { data } = await this.q('campaigns').select('id, name, created_at, sent_count, total_count, status, message, media_name').order('created_at', { ascending: false }).limit(20); return data || []; },
+    
+    // CONTROL METHODS
+    async setStatus(id, status) { await this.q('campaigns').update({ status }).eq('id', id); },
+    
+    async getCampaigns() { const { data } = await this.q('campaigns').select('*').order('created_at', { ascending: false }).limit(20); return data || []; },
     async getCampaignFull(id) { const { data } = await this.q('campaigns').select('*').eq('id', id).single(); return data; },
+    
+    // Monitor Active Campaigns
     async getRunning() { const { data } = await this.q('campaigns').select('*').eq('status', 'running').order('created_at', { ascending: false }).limit(1).single(); return data; }
 };
 
-// --- 4. ENGINE CORE ---
+// --- 4. ENGINE CORE (Now acting as Controller) ---
 const CoreUtils = {
     async processFile(file) {
         if (file.name.toLowerCase().endsWith('.heic') && window.heic2any) { try { file = await heic2any({ blob: file, toType: "image/jpeg", quality: 1.0 }); } catch(e){} }
@@ -111,6 +119,8 @@ const CoreUtils = {
 };
 
 const Engine = {
+    monitorInterval: null,
+
     handleFile(i) { if(i.files[0]) { document.getElementById('file-name').innerText = i.files[0].name; CoreUtils.processFile(i.files[0]).then(f => State.activeFile = f); } },
 
     async createAndQueue() {
@@ -121,89 +131,118 @@ const Engine = {
         
         if(!nums.length) return Utils.toast("No numbers provided", "error");
         
-        Utils.toast("Creating Campaign...", "info");
+        Utils.toast("Uploading to Cloud...", "info");
         const campId = await DataStore.createCampaign(name, msg, nums.length, State.activeFile);
-        if(!campId) return Utils.toast("DB Create Failed", "error");
+        if(!campId) return Utils.toast("Cloud Error", "error");
 
         Utils.toast(`Queueing ${nums.length} contacts...`, "info");
         await DataStore.addToQueue(campId, nums);
 
-        State.activeCampaignId = campId;
-        document.getElementById('active-camp-display').innerText = `ID: ${campId.slice(0,8)}...`;
-        this.toggle(true);
+        // Auto-start Monitoring
+        this.monitor();
+        this.refreshCampaigns();
+        Utils.toast("Launched! Cloud Engine took over.", "success");
+        Utils.log(`<div class="text-emerald-600 font-bold border-l-2 border-emerald-500 pl-2 text-[10px]">Cloud Engine Started</div>`);
     },
 
-    toggle(forceStart = false) { 
-        if(forceStart) State.isRunning = false; 
-        State.isRunning = !State.isRunning; 
-        document.getElementById('btn-engine-toggle').innerText = State.isRunning ? "PAUSE" : "RESUME"; 
-        if(State.isRunning) this.processBatch(); 
+    // 🚀 NEW: Control Specific Campaign (Play/Pause)
+    async toggleCampaign(id, currentStatus) {
+        const newStatus = currentStatus === 'running' ? 'paused' : 'running';
+        await DataStore.setStatus(id, newStatus);
+        Utils.toast(`Campaign ${newStatus === 'running' ? 'Resumed' : 'Paused'}`, newStatus === 'running' ? 'success' : 'info');
+        this.refreshCampaigns(); // Refresh UI immediately
     },
 
-    clear() { 
-        State.activeCampaignId = null; State.isRunning = false; 
-        document.getElementById('btn-engine-toggle').innerText = "START"; 
-        document.getElementById('active-camp-display').innerText = "Idle"; 
-        Utils.toast("Engine Reset"); 
-    },
-
-    async processBatch() {
-        if(!State.isRunning) return;
-        const batch = await DataStore.getNextBatch(State.activeCampaignId, parseInt(State.settings.batch)||10);
-
-        if(!batch || !batch.length) {
-            await DataStore.updateStatus(State.activeCampaignId, 'completed');
-            Utils.toast("Campaign Finished!", "success");
-            this.clear();
-            this.refreshCampaigns();
-            return;
-        }
-
-        Utils.log(`<div class="mt-2 mb-1 text-[10px] font-bold text-slate-400 text-center">--- Batch (${batch.length}) ---</div>`);
-
-        for (const item of batch) {
-            if(!State.isRunning) break;
-            Utils.log(`<div class="text-slate-500 border-l-2 border-slate-200 pl-2 text-[10px]">> ${item.number}...</div>`);
+    // 🚀 NEW: Passive Monitor (Watch & Display)
+    monitor() {
+        if(this.monitorInterval) clearInterval(this.monitorInterval);
+        
+        // Poll every 4 seconds to see what the Edge Function is doing
+        this.monitorInterval = setInterval(async () => {
             
-            // Dynamic Message Reading (Allows live edits)
-            const msg = document.getElementById('camp-msg').value;
-
-            try {
-                await Api.req('send', { id: State.user, number: item.number, message: msg, file: State.activeFile });
-                await DataStore.updateQueueStatus(item.id, 'sent');
-                await DataStore.updateStats(State.activeCampaignId, 'sent');
+            // Find ANY running campaign to show in the Dispatcher box
+            const active = await DataStore.getRunning();
+            
+            if(active) {
+                // Update Progress Bar based on the active one
+                const pct = Math.round((active.sent_count / active.total_count) * 100);
+                document.getElementById('global-progress').style.width = `${pct}%`;
                 
-                document.getElementById('stat-sent').innerText = (parseInt(document.getElementById('stat-sent').innerText) || 0) + 1;
-                Utils.log(`<div class="text-emerald-600 font-bold border-l-2 border-emerald-500 pl-2 text-[10px]">> SENT</div>`);
-            } catch(e) {
-                await DataStore.updateQueueStatus(item.id, 'failed');
-                await DataStore.updateStats(State.activeCampaignId, 'failed');
-                Utils.log(`<div class="text-red-500 font-bold border-l-2 border-red-500 pl-2 text-[10px]">> FAIL</div>`);
+                // Detailed Status Text
+                let statusHtml = `ID: ${active.id.toString().slice(0,4)}... | RUNNING`;
+                if(active.session_id !== State.user) statusHtml += ` <span class="text-amber-500">(${active.session_id})</span>`;
+                
+                document.getElementById('active-camp-display').innerHTML = statusHtml;
+                document.getElementById('active-camp-display').className = "text-[10px] font-bold text-emerald-600";
+                
+                // Update Queue Count in Header
+                document.getElementById('queue-count').innerText = active.total_count - active.sent_count;
+
+            } else {
+                // Reset if nothing is running
+                document.getElementById('global-progress').style.width = `0%`;
+                document.getElementById('active-camp-display').innerText = `System Idle (Waiting for Cloud)`;
+                document.getElementById('active-camp-display').className = "text-[10px] font-bold text-slate-400";
+                document.getElementById('queue-count').innerText = "0";
             }
 
-            await new Promise(r => setTimeout(r, Math.random() * 3000 + 2000));
-        }
+            // Also refresh table occasionally if visible
+            if(!document.getElementById('view-campaigns').classList.contains('hidden')) {
+                 this.refreshCampaigns();
+            }
 
-        if(State.isRunning) {
-            const cool = parseInt(State.settings.cool) || 60;
-            Utils.log(`<div class="text-amber-600 text-[10px] text-center italic my-1">Cooling: ${cool}s...</div>`);
-            setTimeout(() => this.processBatch(), cool * 1000);
-        }
+        }, 4000); 
     },
 
     async refreshCampaigns() {
         const tbody = document.getElementById('history-table-body');
-        tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-xs text-slate-400">Loading...</td></tr>';
+        // Prevent flicker by checking children
+        if(tbody.children.length === 0) tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-xs text-slate-400">Loading...</td></tr>';
+        
         const camps = await DataStore.getCampaigns();
         State.historyCache = camps; 
+        
         tbody.innerHTML = '';
         if(!camps.length) { tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-xs text-slate-400">No campaigns found</td></tr>'; return; }
+        
         camps.forEach((c, idx) => {
             const row = document.createElement('tr');
             row.className = "hover:bg-slate-50 transition-colors border-b border-slate-50";
-            row.innerHTML = `<td class="px-6 py-3 font-bold text-xs text-slate-800">${c.name}</td><td class="px-6 py-3 text-[10px] text-slate-500">${new Date(c.created_at).toLocaleDateString()}</td><td class="px-6 py-3 text-xs font-mono"><span class="text-emerald-600 font-bold">${c.sent_count}</span> <span class="text-slate-300">/</span> <span class="text-slate-500">${c.total_count}</span></td><td class="px-6 py-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${c.status==='running'?'bg-blue-100 text-blue-700':(c.status==='completed'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500')}">${c.status}</span></td><td class="px-6 py-3 text-right"><button onclick="Engine.loadFromHistory(${idx})" class="text-[10px] font-bold bg-white border border-slate-200 text-slate-600 hover:text-brand-600 hover:border-brand-200 px-3 py-1 rounded transition-colors shadow-sm">Load</button></td>`;
+            
+            // Logic for Status Badge Color
+            let badgeClass = 'bg-slate-100 text-slate-500';
+            if(c.status === 'running') badgeClass = 'bg-emerald-100 text-emerald-700 animate-pulse';
+            if(c.status === 'paused') badgeClass = 'bg-amber-100 text-amber-700';
+            if(c.status === 'completed') badgeClass = 'bg-blue-100 text-blue-700';
+
+            // Logic for Action Button (Play/Pause)
+            let btnHtml = '';
+            if(c.status === 'running') {
+                btnHtml = `<button onclick="Engine.toggleCampaign('${c.id}', 'running')" class="mr-2 text-[10px] font-bold bg-amber-50 border border-amber-200 text-amber-600 px-2 py-1 rounded hover:bg-amber-100" title="Pause"><i data-lucide="pause" class="w-3 h-3 inline"></i></button>`;
+            } else if (c.status === 'paused') {
+                btnHtml = `<button onclick="Engine.toggleCampaign('${c.id}', 'paused')" class="mr-2 text-[10px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-600 px-2 py-1 rounded hover:bg-emerald-100" title="Resume"><i data-lucide="play" class="w-3 h-3 inline"></i></button>`;
+            }
+
+            row.innerHTML = `
+                <td class="px-6 py-3 font-bold text-xs text-slate-800">
+                    ${c.name} <span class="text-[9px] text-slate-400 block">${c.session_id || 'client-1'}</span>
+                </td>
+                <td class="px-6 py-3 text-[10px] text-slate-500">${new Date(c.created_at).toLocaleDateString()}</td>
+                <td class="px-6 py-3 text-xs font-mono">
+                    <span class="text-emerald-600 font-bold">${c.sent_count}</span> 
+                    <span class="text-slate-300">/</span> 
+                    <span class="text-slate-500">${c.total_count}</span>
+                </td>
+                <td class="px-6 py-3">
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${badgeClass}">${c.status}</span>
+                </td>
+                <td class="px-6 py-3 text-right">
+                    ${btnHtml}
+                    <button onclick="Engine.loadFromHistory(${idx})" class="text-[10px] font-bold bg-white border border-slate-200 text-slate-600 hover:text-brand-600 hover:border-brand-200 px-3 py-1 rounded transition-colors shadow-sm">Load</button>
+                </td>`;
             tbody.appendChild(row);
         });
+        lucide.createIcons();
     },
 
     async loadFromHistory(idx) {
@@ -224,18 +263,7 @@ const Engine = {
     },
 
     async checkRecovery() {
-        const active = await DataStore.getRunning();
-        if(active && confirm(`Recover interrupted campaign "${active.name}"?`)) {
-            State.activeCampaignId = active.id;
-            document.getElementById('active-camp-display').innerText = `ID: ${active.id.slice(0,8)}...`;
-            document.getElementById('camp-name').value = active.name;
-            document.getElementById('camp-msg').value = active.message;
-            if(active.media_data) {
-                State.activeFile = { data: active.media_data, mimetype: active.media_mime, filename: active.media_name };
-                document.getElementById('file-name').innerText = `${active.media_name} (Recovered)`;
-            }
-            Utils.toast("Recovered. Click RESUME.", "success");
-        }
+        this.monitor(); // Just start the monitor loop
     }
 };
 
