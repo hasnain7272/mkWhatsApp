@@ -4,7 +4,8 @@ const {
     makeCacheableSignalKeyStore,
     DisconnectReason,
     Browsers,
-    BufferJSON
+    BufferJSON,
+    delay // Added delay helper from Baileys
 } = require('@whiskeysockets/baileys');
 
 const pino = require('pino');
@@ -79,12 +80,9 @@ const initAuth = async (collection) => {
 
 // --- 💾 2. PERSISTENT STORE (Saves Contacts to DB) ---
 const makePersistentStore = async (id, mongoClient) => {
-    // We use a separate collection for contacts to keep things organized
     const contactsCol = mongoClient.db("whatsapp_bot").collection(`contacts_${id}`);
-    
     let state = { contacts: {}, chats: {} };
 
-    // A. Load contacts from DB at startup
     console.log(`[${id}] 📥 Loading contacts from DB...`);
     try {
         const docs = await contactsCol.find({}).toArray();
@@ -96,13 +94,12 @@ const makePersistentStore = async (id, mongoClient) => {
         }
     } catch (e) { console.error(`[${id}] DB Load Error:`, e); }
 
-    // Helper to bulk save contacts
     const saveToDb = async (contacts) => {
         if (!contacts.length) return;
         const ops = contacts.map(c => ({
             updateOne: {
                 filter: { _id: c.id },
-                update: { $set: Object.assign({ _id: c.id }, c) }, // Ensure _id is set
+                update: { $set: Object.assign({ _id: c.id }, c) }, 
                 upsert: true
             }
         }));
@@ -113,22 +110,15 @@ const makePersistentStore = async (id, mongoClient) => {
         get contacts() { return state.contacts; },
         get chats() { return state.chats; },
         bind: (ev) => {
-            // B. Listen for the massive history sync (First Scan)
             ev.on('messaging-history.set', async ({ contacts }) => {
                 console.log(`[${id}] 🔄 History Sync: ${contacts.length} contacts. Saving...`);
-                // Update RAM
                 contacts.forEach(c => state.contacts[c.id] = Object.assign(state.contacts[c.id] || {}, c));
-                // Update DB
                 await saveToDb(contacts);
             });
-
-            // C. Listen for new contacts / updates
             ev.on('contacts.upsert', async (contacts) => {
                 contacts.forEach(c => state.contacts[c.id] = Object.assign(state.contacts[c.id] || {}, c));
                 await saveToDb(contacts);
             });
-            
-            // D. Listen for contact name updates
             ev.on('contacts.update', async (updates) => {
                 const updatedContacts = [];
                 updates.forEach(u => {
@@ -156,8 +146,6 @@ async function createSession(id) {
         const { state, saveCreds } = await initAuth(authCol);
         
         const { version } = await fetchLatestBaileysVersion();
-        
-        // 🔥 Use Persistent Store instead of Memory Store
         const store = await makePersistentStore(id, mongo);
 
         console.log(`[${id}] Starting Socket...`);
@@ -173,8 +161,6 @@ async function createSession(id) {
             },
             msgRetryCounterCache, 
             generateHighQualityLinkPreview: true,
-            // Optimization: Don't wait for full history if we already have data, 
-            // but for first run with this code, we want it.
             syncFullHistory: true 
         });
 
@@ -223,22 +209,16 @@ app.get('/api/status/:id', (req, res) => {
     res.json({ status: s ? s.status : 'OFFLINE', qr: s ? s.qr : null }); 
 });
 
-// 🔥 Logout Route (Use this to force a re-scan)
+// 🔥 Logout Route (Force re-scan)
 app.post('/api/logout', async (req, res) => { 
     const { id } = req.body;
     if (sessions[id]) {
         try { await sessions[id].sock.logout(); } catch(e){}
         delete sessions[id];
     }
-    // Note: We do NOT delete the contacts collection here, so data persists.
-    // If you WANT to wipe contacts, uncomment the next line:
-    // await new MongoClient(MONGO_URL).connect().then(m => m.db("whatsapp_bot").collection(`contacts_${id}`).drop());
-    
-    // We DO wipe the session keys so you can scan again
     const mongo = new MongoClient(MONGO_URL);
     await mongo.connect();
     await mongo.db("whatsapp_bot").collection(`session_${id}`).drop();
-    
     res.json({ success: true }); 
 });
 
@@ -262,6 +242,63 @@ app.post('/api/send', async (req, res) => {
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// --- 🛡️ NEW: HUMANIZING ENDPOINTS ---
+
+// 1. PRESENCE (Typing/Recording)
+// Usage: POST /api/presence { id: "client-1", number: "12345", type: "composing" }
+app.post('/api/presence', async (req, res) => {
+    const { id, number, type } = req.body; // type: 'composing' | 'recording' | 'paused'
+    if (!sessions[id]) return res.status(400).json({ error: "Offline" });
+    try {
+        const jid = number + "@s.whatsapp.net";
+        await sessions[id].sock.sendPresenceUpdate(type, jid);
+        res.json({ success: true });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// 2. CHECK NUMBERS (Filter Invalid)
+// Usage: POST /api/check-numbers { id: "client-1", numbers: ["123", "456"] }
+app.post('/api/check-numbers', async (req, res) => {
+    const { id, numbers } = req.body;
+    if (!sessions[id]) return res.status(400).json({ error: "Offline" });
+    try {
+        const results = [];
+        for (const num of numbers) {
+            const jid = num + "@s.whatsapp.net";
+            const [result] = await sessions[id].sock.onWhatsApp(jid);
+            if (result && result.exists) results.push(num);
+        }
+        res.json({ valid_numbers: results });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// 3. UPDATE PROFILE (Status/Bio)
+// Usage: POST /api/update-profile { id: "client-1", status: "Busy working" }
+app.post('/api/update-profile', async (req, res) => {
+    const { id, status } = req.body;
+    if (!sessions[id]) return res.status(400).json({ error: "Offline" });
+    try {
+        await sessions[id].sock.updateProfileStatus(status);
+        res.json({ success: true });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// 4. REACT (Acknowledge replies)
+// Usage: POST /api/react { id: "client-1", number: "12345", text: "👍", key: {...} }
+app.post('/api/react', async (req, res) => {
+    const { id, number, text, key } = req.body;
+    if (!sessions[id]) return res.status(400).json({ error: "Offline" });
+    try {
+        const jid = number + "@s.whatsapp.net";
+        await sessions[id].sock.sendMessage(jid, { 
+            react: { text: text || "👍", key: key } 
+        });
+        res.json({ success: true });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// --- EXISTING GETTERS ---
 
 app.get('/api/contacts/:id', (req, res) => {
     if (!sessions[req.params.id]) return res.json({ count: 0, contacts: [] });
@@ -293,15 +330,12 @@ app.get('/api/get-members', async (req, res) => {
 });
 
 app.get('/api/init', (req, res) => {
-    // Security Check: Ensure keys exist on server before sending
     if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
         return res.status(500).json({ error: 'Server Environment Not Configured' });
     }
-
     res.json({
         SUPABASE_URL: process.env.SUPABASE_URL,
         SUPABASE_KEY: process.env.SUPABASE_KEY,
-        // Optional: Send the API Base URL dynamically too
         API_BASE: process.env.RENDER_EXTERNAL_URL || 'http://localhost:3000'
     });
 });
