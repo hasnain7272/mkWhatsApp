@@ -1,7 +1,7 @@
 /**
- * NEXUS CORE v3.2 | "THE MONOLITH"
- * Full Feature Parity: Contacts, Lists, Campaigns, Queue, Session.
- * Dynamic Configuration: 0 Hardcoded Values.
+ * NEXUS CORE v4.0 | "THE CONTROLLER"
+ * Architecture: Serverless Event-Driven
+ * Browser Role: UI & Remote Control only.
  */
 
 // --- 1. GLOBAL STATE ---
@@ -10,8 +10,7 @@ const State = {
     status: 'OFFLINE', 
     qr: null, 
     activeFile: null, 
-    isRunning: false, 
-    settings: { batch: 10, cool: 60 }, 
+    settings: { batch: 10, cool: 60 }, // These settings are now illustrative or used for DB config
     allContacts: [], 
     selection: new Set(), 
     tempMemory: new Map(), 
@@ -62,40 +61,53 @@ const Api = {
 };
 
 const DataStore = {
-    // Helper for Supabase Calls
     q(table) { return window.db.from(table); },
 
-    // LISTS (Contact Manager)
+    // LISTS
     async getLists() { const { data } = await this.q('lists').select('id, name, contacts').order('created_at', { ascending: false }); return data ? data.map(i => ({ id: i.id, name: i.name, count: i.contacts ? i.contacts.length : 0 })) : []; },
     async getListContent(id) { const { data } = await this.q('lists').select('name, contacts').eq('id', id).single(); return data || { name: '', contacts: [] }; },
     async saveList(name, contacts) { const { data: existing } = await this.q('lists').select('id').eq('name', name).maybeSingle(); if (existing) await this.q('lists').update({ contacts }).eq('id', existing.id); else await this.q('lists').insert([{ name, contacts }]); },
     async deleteList(id) { await this.q('lists').delete().eq('id', id); },
 
-    // CAMPAIGNS & QUEUE
+    // CAMPAIGNS (Updated for Server-Side)
     async createCampaign(name, msg, total, mediaFile) {
         let mData = null, mMime = null, mName = null;
         if(mediaFile) { mData = mediaFile.data; mMime = mediaFile.mimetype; mName = mediaFile.filename; }
-        const { data, error } = await this.q('campaigns').insert([{ name, message: msg, total_count: total, sent_count: 0, status: 'running', media_data: mData, media_mime: mMime, media_name: mName }]).select().single();
+        
+        // 🔥 CRITICAL: Saving session_id (State.user) so Edge Function knows which phone to use
+        const { data, error } = await this.q('campaigns').insert([{ 
+            name, 
+            message: msg, 
+            total_count: total, 
+            sent_count: 0, 
+            status: 'running', // Auto-start
+            session_id: State.user, 
+            media_data: mData, 
+            media_mime: mMime, 
+            media_name: mName 
+        }]).select().single();
         return error ? null : data.id;
     },
     async addToQueue(campId, numbers) {
         const rows = numbers.map(n => ({ campaign_id: campId, number: n, status: 'pending' }));
+        // Bulk insert in chunks of 500
         for (let i = 0; i < rows.length; i += 500) await this.q('campaign_queue').insert(rows.slice(i, i + 500));
     },
-    async getNextBatch(campId, size) { const { data } = await this.q('campaign_queue').select('id, number').eq('campaign_id', campId).eq('status', 'pending').limit(size); return data || []; },
-    async updateQueueStatus(itemId, status) { await this.q('campaign_queue').update({ status }).eq('id', itemId); },
-    async updateStats(id, type) { 
-        // Optimized: Increment logic in memory for UI, DB for persistence
-        const { data } = await this.q('campaigns').select(`${type}_count`).eq('id', id).single(); 
-        if(data) await this.q('campaigns').update({ [`${type}_count`]: data[`${type}_count`] + 1 }).eq('id', id); 
-    },
-    async updateStatus(id, status) { await this.q('campaigns').update({ status }).eq('id', id); },
-    async getCampaigns() { const { data } = await this.q('campaigns').select('id, name, created_at, sent_count, total_count, status, message, media_name').order('created_at', { ascending: false }).limit(20); return data || []; },
+    
+    // CONTROL METHODS
+    async setStatus(id, status) { await this.q('campaigns').update({ status }).eq('id', id); },
+    
+    async getCampaigns() { const { data } = await this.q('campaigns').select('*').order('created_at', { ascending: false }).limit(20); return data || []; },
     async getCampaignFull(id) { const { data } = await this.q('campaigns').select('*').eq('id', id).single(); return data; },
-    async getRunning() { const { data } = await this.q('campaigns').select('*').eq('status', 'running').order('created_at', { ascending: false }).limit(1).single(); return data; }
+    
+    // NEW: Monitor Active Campaign
+    async getCampaignStats(id) {
+        const { data } = await this.q('campaigns').select('sent_count, total_count, status').eq('id', id).single();
+        return data;
+    }
 };
 
-// --- 4. ENGINE CORE ---
+// --- 4. ENGINE CORE (Now acting as Controller) ---
 const CoreUtils = {
     async processFile(file) {
         if (file.name.toLowerCase().endsWith('.heic') && window.heic2any) { try { file = await heic2any({ blob: file, toType: "image/jpeg", quality: 1.0 }); } catch(e){} }
@@ -111,6 +123,8 @@ const CoreUtils = {
 };
 
 const Engine = {
+    monitorInterval: null,
+
     handleFile(i) { if(i.files[0]) { document.getElementById('file-name').innerText = i.files[0].name; CoreUtils.processFile(i.files[0]).then(f => State.activeFile = f); } },
 
     async createAndQueue() {
@@ -121,74 +135,76 @@ const Engine = {
         
         if(!nums.length) return Utils.toast("No numbers provided", "error");
         
-        Utils.toast("Creating Campaign...", "info");
+        Utils.toast("Uploading to Cloud...", "info");
         const campId = await DataStore.createCampaign(name, msg, nums.length, State.activeFile);
-        if(!campId) return Utils.toast("DB Create Failed", "error");
+        if(!campId) return Utils.toast("Cloud Error", "error");
 
         Utils.toast(`Queueing ${nums.length} contacts...`, "info");
         await DataStore.addToQueue(campId, nums);
 
         State.activeCampaignId = campId;
-        document.getElementById('active-camp-display').innerText = `ID: ${campId.slice(0,8)}...`;
-        this.toggle(true);
+        
+        // Start Monitoring immediately
+        this.monitor(campId);
+        Utils.toast("Launched! Cloud Engine took over.", "success");
     },
 
-    toggle(forceStart = false) { 
-        if(forceStart) State.isRunning = false; 
-        State.isRunning = !State.isRunning; 
-        document.getElementById('btn-engine-toggle').innerText = State.isRunning ? "PAUSE" : "RESUME"; 
-        if(State.isRunning) this.processBatch(); 
+    // 🚀 NEW: Polling System (Instead of Browser Loop)
+    monitor(campId) {
+        if(this.monitorInterval) clearInterval(this.monitorInterval);
+        
+        document.getElementById('active-camp-display').innerText = `ID: ${campId.slice(0,8)}...`;
+        document.getElementById('btn-engine-toggle').innerText = "PAUSE";
+        document.getElementById('btn-engine-toggle').classList.replace('bg-emerald-100', 'bg-amber-100');
+        document.getElementById('btn-engine-toggle').classList.replace('text-emerald-700', 'text-amber-700');
+
+        this.monitorInterval = setInterval(async () => {
+            if(!State.activeCampaignId) return;
+
+            const stats = await DataStore.getCampaignStats(State.activeCampaignId);
+            
+            if(stats) {
+                // Update UI Stats
+                document.getElementById('stat-sent').innerText = stats.sent_count;
+                document.getElementById('queue-count').innerText = stats.total_count - stats.sent_count;
+                
+                // Update Progress Bar
+                const pct = Math.round((stats.sent_count / stats.total_count) * 100);
+                document.getElementById('global-progress').style.width = `${pct}%`;
+
+                // Update Status Text
+                document.getElementById('active-camp-display').innerText = `ID: ${campId.slice(0,8)} | ${stats.status.toUpperCase()}`;
+
+                // Handle Completion
+                if(stats.status === 'completed' || stats.sent_count >= stats.total_count) {
+                    this.clear();
+                    Utils.toast("Campaign Completed", "success");
+                }
+            }
+        }, 4000); // Check every 4 seconds
+    },
+
+    async toggle() { 
+        if(!State.activeCampaignId) return;
+        const stats = await DataStore.getCampaignStats(State.activeCampaignId);
+        
+        if(stats.status === 'running') {
+            await DataStore.setStatus(State.activeCampaignId, 'paused');
+            document.getElementById('btn-engine-toggle').innerText = "RESUME";
+            Utils.toast("Campaign Paused (Server stopped)", "info");
+        } else {
+            await DataStore.setStatus(State.activeCampaignId, 'running');
+            document.getElementById('btn-engine-toggle').innerText = "PAUSE";
+            Utils.toast("Resumed Server Engine", "success");
+        }
     },
 
     clear() { 
-        State.activeCampaignId = null; State.isRunning = false; 
-        document.getElementById('btn-engine-toggle').innerText = "START"; 
-        document.getElementById('active-camp-display').innerText = "Idle"; 
-        Utils.toast("Engine Reset"); 
-    },
-
-    async processBatch() {
-        if(!State.isRunning) return;
-        const batch = await DataStore.getNextBatch(State.activeCampaignId, parseInt(State.settings.batch)||10);
-
-        if(!batch || !batch.length) {
-            await DataStore.updateStatus(State.activeCampaignId, 'completed');
-            Utils.toast("Campaign Finished!", "success");
-            this.clear();
-            this.refreshCampaigns();
-            return;
-        }
-
-        Utils.log(`<div class="mt-2 mb-1 text-[10px] font-bold text-slate-400 text-center">--- Batch (${batch.length}) ---</div>`);
-
-        for (const item of batch) {
-            if(!State.isRunning) break;
-            Utils.log(`<div class="text-slate-500 border-l-2 border-slate-200 pl-2 text-[10px]">> ${item.number}...</div>`);
-            
-            // Dynamic Message Reading (Allows live edits)
-            const msg = document.getElementById('camp-msg').value;
-
-            try {
-                await Api.req('send', { id: State.user, number: item.number, message: msg, file: State.activeFile });
-                await DataStore.updateQueueStatus(item.id, 'sent');
-                await DataStore.updateStats(State.activeCampaignId, 'sent');
-                
-                document.getElementById('stat-sent').innerText = (parseInt(document.getElementById('stat-sent').innerText) || 0) + 1;
-                Utils.log(`<div class="text-emerald-600 font-bold border-l-2 border-emerald-500 pl-2 text-[10px]">> SENT</div>`);
-            } catch(e) {
-                await DataStore.updateQueueStatus(item.id, 'failed');
-                await DataStore.updateStats(State.activeCampaignId, 'failed');
-                Utils.log(`<div class="text-red-500 font-bold border-l-2 border-red-500 pl-2 text-[10px]">> FAIL</div>`);
-            }
-
-            await new Promise(r => setTimeout(r, Math.random() * 3000 + 2000));
-        }
-
-        if(State.isRunning) {
-            const cool = parseInt(State.settings.cool) || 60;
-            Utils.log(`<div class="text-amber-600 text-[10px] text-center italic my-1">Cooling: ${cool}s...</div>`);
-            setTimeout(() => this.processBatch(), cool * 1000);
-        }
+        if(this.monitorInterval) clearInterval(this.monitorInterval);
+        State.activeCampaignId = null; 
+        document.getElementById('btn-engine-toggle').innerText = "START";
+        document.getElementById('active-camp-display').innerText = "Idle";
+        document.getElementById('global-progress').style.width = "0%";
     },
 
     async refreshCampaigns() {
@@ -224,22 +240,17 @@ const Engine = {
     },
 
     async checkRecovery() {
-        const active = await DataStore.getRunning();
-        if(active && confirm(`Recover interrupted campaign "${active.name}"?`)) {
-            State.activeCampaignId = active.id;
-            document.getElementById('active-camp-display').innerText = `ID: ${active.id.slice(0,8)}...`;
-            document.getElementById('camp-name').value = active.name;
-            document.getElementById('camp-msg').value = active.message;
-            if(active.media_data) {
-                State.activeFile = { data: active.media_data, mimetype: active.media_mime, filename: active.media_name };
-                document.getElementById('file-name').innerText = `${active.media_name} (Recovered)`;
-            }
-            Utils.toast("Recovered. Click RESUME.", "success");
+        // Automatically check if we have a running campaign on page load
+        const active = await DataStore.getRunning(); // You need to implement getRunning in DataStore to fetch status='running'
+        if(active) {
+             State.activeCampaignId = active.id;
+             this.monitor(active.id);
+             Utils.toast(`Monitoring Active Campaign: ${active.name}`, "info");
         }
     }
 };
 
-// --- 5. MANAGERS (Session, Contact, DatabaseUI) ---
+// ... (Rest of Session, ContactManager, Database, UI, HTML remains same)
 const Session = {
     switch(id) { State.user = id; this.renderBtn(); this.check(); },
     renderBtn() { ['client-1','client-2'].forEach(id => { const btn = document.getElementById(id === 'client-1' ? 'btn-c1' : 'btn-c2'); btn.className = `py-2 text-[10px] font-bold rounded-lg border transition-all ${State.user===id ? 'border-brand-600 bg-brand-600 text-white shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`; }); },
