@@ -1,3 +1,7 @@
+-- Enable the extension if not already done
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
 -- Create a table to store contact lists
 create table lists (
   id uuid default gen_random_uuid() primary key,
@@ -6,15 +10,7 @@ create table lists (
   contacts jsonb not null -- This stores your [{name, number}] array
 );
 
--- Enable security (Row Level Security)
-alter table lists enable row level security;
-
--- For now, allow public access (Simplest for MVP)
--- WARNING: In production, you would add User Auth policies here.
-create policy "Public Access" on lists for all using (true);
-
-
--- 1. Campaign Metadata
+-- 2. Campaign Metadata
 create table campaigns (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default now(),
@@ -30,6 +26,7 @@ create table campaigns (
   session_id text null
 );
 
+-- 3. Each msg sent data
 create table campaign_queue (
   id uuid not null default gen_random_uuid (),
   campaign_id uuid null,
