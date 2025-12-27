@@ -10,7 +10,8 @@ const State = {
     status: 'OFFLINE', 
     qr: null, 
     activeFile: null, 
-    settings: { batch: 10, cool: 60 }, 
+    // Settings are now managed by Cloud Engine, UI is just for show
+    settings: { batch: 10, cool: 'Random' }, 
     allContacts: [], 
     selection: new Set(), 
     tempMemory: new Map(), 
@@ -48,8 +49,6 @@ const Router = {
     } 
 };
 
-const Settings = { save(k,v) { State.settings[k]=v; document.getElementById(`val-${k}`).innerText = v; } };
-
 // --- 3. API & DATA LAYER ---
 const Api = {
     async req(endpoint, body) {
@@ -74,7 +73,7 @@ const DataStore = {
         let mData = null, mMime = null, mName = null;
         if(mediaFile) { mData = mediaFile.data; mMime = mediaFile.mimetype; mName = mediaFile.filename; }
         
-        // 🔥 CRITICAL FIX: Saving session_id (State.user) so Edge Function knows which phone to use
+        // 🔥 Saving session_id (State.user) so Edge Function knows which phone to use
         const { data, error } = await this.q('campaigns').insert([{ 
             name, 
             message: msg, 
@@ -100,12 +99,7 @@ const DataStore = {
     async getCampaigns() { const { data } = await this.q('campaigns').select('*').order('created_at', { ascending: false }).limit(20); return data || []; },
     async getCampaignFull(id) { const { data } = await this.q('campaigns').select('*').eq('id', id).single(); return data; },
     
-    // NEW: Monitor Active Campaign
-    async getCampaignStats(id) {
-        const { data } = await this.q('campaigns').select('sent_count, total_count, status, session_id').eq('id', id).single();
-        return data;
-    },
-    
+    // Monitor Active Campaigns
     async getRunning() { const { data } = await this.q('campaigns').select('*').eq('status', 'running').order('created_at', { ascending: false }).limit(1).single(); return data; }
 };
 
@@ -144,93 +138,111 @@ const Engine = {
         Utils.toast(`Queueing ${nums.length} contacts...`, "info");
         await DataStore.addToQueue(campId, nums);
 
-        State.activeCampaignId = campId;
-        
-        // Start Monitoring immediately (The Edge Function takes over)
-        this.monitor(campId);
+        // Auto-start Monitoring
+        this.monitor();
+        this.refreshCampaigns();
         Utils.toast("Launched! Cloud Engine took over.", "success");
         Utils.log(`<div class="text-emerald-600 font-bold border-l-2 border-emerald-500 pl-2 text-[10px]">Cloud Engine Started</div>`);
     },
 
-    // 🚀 NEW: Polling System (Instead of Browser Loop)
-    monitor(campId) {
+    // 🚀 NEW: Control Specific Campaign (Play/Pause)
+    async toggleCampaign(id, currentStatus) {
+        const newStatus = currentStatus === 'running' ? 'paused' : 'running';
+        await DataStore.setStatus(id, newStatus);
+        Utils.toast(`Campaign ${newStatus === 'running' ? 'Resumed' : 'Paused'}`, newStatus === 'running' ? 'success' : 'info');
+        this.refreshCampaigns(); // Refresh UI immediately
+    },
+
+    // 🚀 NEW: Passive Monitor (Watch & Display)
+    monitor() {
         if(this.monitorInterval) clearInterval(this.monitorInterval);
         
-        document.getElementById('active-camp-display').innerText = `ID: ${campId.slice(0,8)}...`;
-        document.getElementById('btn-engine-toggle').innerText = "PAUSE";
-        document.getElementById('btn-engine-toggle').classList.replace('bg-emerald-100', 'bg-amber-100');
-        document.getElementById('btn-engine-toggle').classList.replace('text-emerald-700', 'text-amber-700');
-
         // Poll every 4 seconds to see what the Edge Function is doing
         this.monitorInterval = setInterval(async () => {
-            if(!State.activeCampaignId) return;
-
-            const stats = await DataStore.getCampaignStats(State.activeCampaignId);
             
-            if(stats) {
-                // Update UI Stats
-                document.getElementById('stat-sent').innerText = stats.sent_count;
-                document.getElementById('queue-count').innerText = stats.total_count - stats.sent_count;
-                
-                // Update Progress Bar
-                const pct = Math.round((stats.sent_count / stats.total_count) * 100);
+            // Find ANY running campaign to show in the Dispatcher box
+            const active = await DataStore.getRunning();
+            
+            if(active) {
+                // Update Progress Bar based on the active one
+                const pct = Math.round((active.sent_count / active.total_count) * 100);
                 document.getElementById('global-progress').style.width = `${pct}%`;
+                
+                // Detailed Status Text
+                let statusHtml = `ID: ${active.id.toString().slice(0,4)}... | RUNNING`;
+                if(active.session_id !== State.user) statusHtml += ` <span class="text-amber-500">(${active.session_id})</span>`;
+                
+                document.getElementById('active-camp-display').innerHTML = statusHtml;
+                document.getElementById('active-camp-display').className = "text-[10px] font-bold text-emerald-600";
+                
+                // Update Queue Count in Header
+                document.getElementById('queue-count').innerText = active.total_count - active.sent_count;
 
-                // Update Status Text
-                document.getElementById('active-camp-display').innerText = `ID: ${campId.slice(0,8)} | ${stats.status.toUpperCase()}`;
-
-                // Auto-Switch Session Context if viewing
-                if(stats.session_id !== State.user) {
-                   // Optional: visual indicator that this campaign belongs to another user
-                   document.getElementById('active-camp-display').innerText += ` (${stats.session_id})`;
-                }
-
-                // Handle Completion
-                if(stats.status === 'completed' || (stats.sent_count >= stats.total_count && stats.total_count > 0)) {
-                    this.clear();
-                    Utils.toast("Campaign Completed", "success");
-                    Utils.log(`<div class="text-emerald-600 font-bold border-l-2 border-emerald-500 pl-2 text-[10px]">Campaign Completed</div>`);
-                }
+            } else {
+                // Reset if nothing is running
+                document.getElementById('global-progress').style.width = `0%`;
+                document.getElementById('active-camp-display').innerText = `System Idle (Waiting for Cloud)`;
+                document.getElementById('active-camp-display').className = "text-[10px] font-bold text-slate-400";
+                document.getElementById('queue-count').innerText = "0";
             }
+
+            // Also refresh table occasionally if visible
+            if(!document.getElementById('view-campaigns').classList.contains('hidden')) {
+                 this.refreshCampaigns();
+            }
+
         }, 4000); 
-    },
-
-    async toggle() { 
-        if(!State.activeCampaignId) return;
-        const stats = await DataStore.getCampaignStats(State.activeCampaignId);
-        
-        if(stats.status === 'running') {
-            await DataStore.setStatus(State.activeCampaignId, 'paused');
-            document.getElementById('btn-engine-toggle').innerText = "RESUME";
-            Utils.toast("Campaign Paused (Server stopped)", "info");
-        } else {
-            await DataStore.setStatus(State.activeCampaignId, 'running');
-            document.getElementById('btn-engine-toggle').innerText = "PAUSE";
-            Utils.toast("Resumed Server Engine", "success");
-        }
-    },
-
-    clear() { 
-        if(this.monitorInterval) clearInterval(this.monitorInterval);
-        State.activeCampaignId = null; 
-        document.getElementById('btn-engine-toggle').innerText = "START";
-        document.getElementById('active-camp-display').innerText = "Idle";
-        document.getElementById('global-progress').style.width = "0%";
     },
 
     async refreshCampaigns() {
         const tbody = document.getElementById('history-table-body');
-        tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-xs text-slate-400">Loading...</td></tr>';
+        // Prevent flicker by checking children
+        if(tbody.children.length === 0) tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-xs text-slate-400">Loading...</td></tr>';
+        
         const camps = await DataStore.getCampaigns();
         State.historyCache = camps; 
+        
         tbody.innerHTML = '';
         if(!camps.length) { tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-xs text-slate-400">No campaigns found</td></tr>'; return; }
+        
         camps.forEach((c, idx) => {
             const row = document.createElement('tr');
             row.className = "hover:bg-slate-50 transition-colors border-b border-slate-50";
-            row.innerHTML = `<td class="px-6 py-3 font-bold text-xs text-slate-800">${c.name}</td><td class="px-6 py-3 text-[10px] text-slate-500">${new Date(c.created_at).toLocaleDateString()}</td><td class="px-6 py-3 text-xs font-mono"><span class="text-emerald-600 font-bold">${c.sent_count}</span> <span class="text-slate-300">/</span> <span class="text-slate-500">${c.total_count}</span></td><td class="px-6 py-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${c.status==='running'?'bg-blue-100 text-blue-700':(c.status==='completed'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500')}">${c.status}</span></td><td class="px-6 py-3 text-right"><button onclick="Engine.loadFromHistory(${idx})" class="text-[10px] font-bold bg-white border border-slate-200 text-slate-600 hover:text-brand-600 hover:border-brand-200 px-3 py-1 rounded transition-colors shadow-sm">Load</button></td>`;
+            
+            // Logic for Status Badge Color
+            let badgeClass = 'bg-slate-100 text-slate-500';
+            if(c.status === 'running') badgeClass = 'bg-emerald-100 text-emerald-700 animate-pulse';
+            if(c.status === 'paused') badgeClass = 'bg-amber-100 text-amber-700';
+            if(c.status === 'completed') badgeClass = 'bg-blue-100 text-blue-700';
+
+            // Logic for Action Button (Play/Pause)
+            let btnHtml = '';
+            if(c.status === 'running') {
+                btnHtml = `<button onclick="Engine.toggleCampaign('${c.id}', 'running')" class="mr-2 text-[10px] font-bold bg-amber-50 border border-amber-200 text-amber-600 px-2 py-1 rounded hover:bg-amber-100" title="Pause"><i data-lucide="pause" class="w-3 h-3 inline"></i></button>`;
+            } else if (c.status === 'paused') {
+                btnHtml = `<button onclick="Engine.toggleCampaign('${c.id}', 'paused')" class="mr-2 text-[10px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-600 px-2 py-1 rounded hover:bg-emerald-100" title="Resume"><i data-lucide="play" class="w-3 h-3 inline"></i></button>`;
+            }
+
+            row.innerHTML = `
+                <td class="px-6 py-3 font-bold text-xs text-slate-800">
+                    ${c.name} <span class="text-[9px] text-slate-400 block">${c.session_id || 'client-1'}</span>
+                </td>
+                <td class="px-6 py-3 text-[10px] text-slate-500">${new Date(c.created_at).toLocaleDateString()}</td>
+                <td class="px-6 py-3 text-xs font-mono">
+                    <span class="text-emerald-600 font-bold">${c.sent_count}</span> 
+                    <span class="text-slate-300">/</span> 
+                    <span class="text-slate-500">${c.total_count}</span>
+                </td>
+                <td class="px-6 py-3">
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${badgeClass}">${c.status}</span>
+                </td>
+                <td class="px-6 py-3 text-right">
+                    ${btnHtml}
+                    <button onclick="Engine.loadFromHistory(${idx})" class="text-[10px] font-bold bg-white border border-slate-200 text-slate-600 hover:text-brand-600 hover:border-brand-200 px-3 py-1 rounded transition-colors shadow-sm">Load</button>
+                </td>`;
             tbody.appendChild(row);
         });
+        lucide.createIcons();
     },
 
     async loadFromHistory(idx) {
@@ -251,16 +263,11 @@ const Engine = {
     },
 
     async checkRecovery() {
-        const active = await DataStore.getRunning(); 
-        if(active) {
-             State.activeCampaignId = active.id;
-             this.monitor(active.id);
-             Utils.toast(`Monitoring Active Campaign: ${active.name}`, "info");
-        }
+        this.monitor(); // Just start the monitor loop
     }
 };
 
-// ... (Rest of Session, ContactManager, Database, UI remains same)
+// --- 5. MANAGERS (Session, Contact, DatabaseUI) ---
 const Session = {
     switch(id) { State.user = id; this.renderBtn(); this.check(); },
     renderBtn() { ['client-1','client-2'].forEach(id => { const btn = document.getElementById(id === 'client-1' ? 'btn-c1' : 'btn-c2'); btn.className = `py-2 text-[10px] font-bold rounded-lg border transition-all ${State.user===id ? 'border-brand-600 bg-brand-600 text-white shadow-md' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`; }); },
