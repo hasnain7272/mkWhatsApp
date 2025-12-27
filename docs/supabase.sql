@@ -26,24 +26,18 @@ create table campaigns (
   failed_count int default 0,
   media_data text null,
   media_mime text null,
-  media_name text null
+  media_name text null,
+  session_id text null
 );
 
--- 2. The Execution Queue (The heavy lifter)
-create table queue (
-  id uuid default gen_random_uuid() primary key,
-  campaign_id uuid references campaigns(id) on delete cascade,
+create table campaign_queue (
+  id uuid not null default gen_random_uuid (),
+  campaign_id uuid null,
   number text not null,
-  name text,
-  status text default 'pending', -- 'pending', 'sent', 'failed'
-  updated_at timestamp with time zone
-);
-
--- 3. Speed Index (Crucial for performance)
-create index idx_queue_status on queue(campaign_id, status);
-
--- 4. Enable Access
-alter table campaigns enable row level security;
-alter table queue enable row level security;
-create policy "Public Access Campaigns" on campaigns for all using (true);
-create policy "Public Access Queue" on queue for all using (true);
+  status text null default 'pending'::text,
+  message text null,
+  sent_at timestamp with time zone null,
+  created_at timestamp with time zone null default now(),
+  constraint campaign_queue_pkey primary key (id),
+  constraint campaign_queue_campaign_id_fkey foreign KEY (campaign_id) references campaigns (id)
+) TABLESPACE pg_default;
